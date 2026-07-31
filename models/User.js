@@ -5,8 +5,11 @@ const userSchema = mongoose.Schema({
     fullname: { type: String, required: true, trim: true },
     email: { type: String, required: true, lowercase: true, trim: true },
     contact: { type: Number, required: true },
-    role: { type: String, enum: ['farmer', 'admin'], required: true, default: 'farmer' },
-    password: { type: String, required: true }
+    role: { type: String, enum: ['farmer', 'admin'], required: true, default: 'admin' },
+    password: { type: String, required: true },
+    village: { type: String, required: false },
+}, {
+    timestamps: true
 })
 
 const userModel = mongoose.model('users', userSchema)

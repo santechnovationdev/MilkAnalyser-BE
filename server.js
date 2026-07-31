@@ -5,13 +5,18 @@ const Mongoose = require('mongoose');
 const Session = require('express-session');
 const MongoDbSession = require('connect-mongodb-session')(Session);
 // const path = require("path");
-
+const MilkPredictRouter = require('./routes/MilkPredictRouter')
+const SensorDataRouter = require('./routes/SensorRouter')
+const AuthRouter = require('./routes/AuthRouter')
+const dashboardRouter = require("./routes/dashboardRouter");
+const reportRoutes = require("./routes/reportRoutes");
+const farmerRoutes = require("./routes/farmerRoutes")
 
 const app = Express();
 const port = process.env.PORT || 5004;
 
 const corsOptions = {
-    origin: ["http://localhost:4002",  "http://localhost:3000",],
+    origin: ["http://localhost:4002", "http://localhost:3000",],
     credentials: true,
 };
 
@@ -48,6 +53,14 @@ app.use(Session({
     //     sameSite: 'none'
     // }
 }))
+
+app.use(SensorDataRouter)
+app.use(MilkPredictRouter)
+app.use(AuthRouter)
+app.use(dashboardRouter)
+app.use(reportRoutes)
+app.use(farmerRoutes);
+
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 })
