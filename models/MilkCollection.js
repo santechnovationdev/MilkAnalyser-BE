@@ -15,9 +15,9 @@ const milkPredictSchema = new mongoose.Schema(
 
         snf: { type: Number, required: true },
 
-        water: { type: Number, required: true },
+        density: { type: Number, required: true },
 
-        temp: { type: Number, required: true },
+        // temp: { type: Number, required: true },
 
         quality: { type: String, enum: ["Good", "Average", "Poor"] },
 

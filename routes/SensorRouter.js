@@ -6,7 +6,11 @@ const {
     getLatestSensorData,
     getAllSensorData,
     getSensorDataById,
-    deleteSensorData
+    deleteSensorData,
+    setSensorMode,
+    startTest,
+    resetSensorTest,
+    processSensorResult
 } = require("../controllers/sensorController");
 
 // Fetch latest ThinkSpeak data and save to MongoDB
@@ -23,5 +27,16 @@ router.get("/fetchData/:id", getSensorDataById);
 
 // Delete sensor data
 router.delete("/deleteSensorData/:id", deleteSensorData);
+
+// Set the modes for Milk analyser:
+router.post('/setMode', setSensorMode)
+
+// set start test:
+router.post('/startTest', startTest)
+router.post('/resetTest', resetSensorTest)
+
+
+router.get("/process-result", processSensorResult);
+
 
 module.exports = router;
