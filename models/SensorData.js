@@ -1,30 +1,107 @@
 const mongoose = require("mongoose");
 
+const readingSchema = new mongoose.Schema(
+    {
+        entryId: {
+            type: Number,
+            required: true,
+        },
+
+        measuredAt: {
+            type: Date,
+            required: true,
+        },
+
+        spectralValues: {
+            type: [Number],
+            required: true,
+            validate: {
+                validator: (values) =>
+                    values.length === 18 || values.length === 1,
+                message: "A reading must contain 18 values for adulteration or 1 value for analysis.",
+            },
+        },
+    },
+    { _id: false }
+);
+
 const sensorDataSchema = new mongoose.Schema(
     {
-        entryId: { type: Number, required: true, unique: true },
-
-        spectralAnalyses: {
-            type: [Number], default: [], validate: {
-                validator: (arr) => arr.length === 0 || arr.length === 18,
-                message: "Spectral sensor must contain 18 values."
-            }
+        farmerId: {
+            type: mongoose.Schema.Types.ObjectId,
+            required: true,
+            index: true,
         },
 
-        spectralAdultration: {
-            type: [Number], default: [], validate: {
-                validator: (arr) => arr.length === 0 || arr.length === 18,
-                message: "Spectral sensor must contain 18 values."
-            }
+        mode: {
+            type: Number,
+            required: true,
+            enum: [0, 1],
         },
 
-        // ultrasonic: { type: Number, required: true },
+        startedAt: {
+            type: Date,
+            required: true,
+        },
 
-        // temperature: { type: Number, required: true }
+        endsAt: {
+            type: Date,
+            default: null,
+        },
 
+        startEntryId: {
+            type: Number,
+            required: true,
+        },
+
+        lastProcessedEntryId: {
+            type: Number,
+            required: true,
+        },
+
+        expectedReadings: {
+            type: Number,
+            default: null,
+        },
+
+        readings: {
+            type: [readingSchema],
+            default: [],
+        },
+
+        status: {
+            type: String,
+            enum: ["running", "completed", "failed"],
+            default: "running",
+        },
+
+        lastError: {
+            type: String,
+            default: null,
+        },
     },
     {
-        timestamps: true
-    });
-const SensorModel = mongoose.model("SensorData", sensorDataSchema);
-module.exports = SensorModel
+        timestamps: true,
+    }
+);
+
+// Validate readings according to the selected mode.
+sensorDataSchema.pre("validate", function () {
+    const expectedLength = this.mode === 0 ? 18 : 1;
+
+    for (const reading of this.readings) {
+        if (
+            reading.spectralValues.length !== expectedLength ||
+            !reading.spectralValues.every(Number.isFinite)
+        ) {
+            this.invalidate(
+                "readings",
+                `Mode ${this.mode} requires exactly ${expectedLength} numeric values per reading.`
+            );
+
+            break;
+        }
+    }
+});
+
+module.exports = mongoose.model("SensorData", sensorDataSchema);

@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const {
-    fetchThinkSpeakData,
+   
     getLatestSensorData,
     getAllSensorData,
     getSensorDataById,
@@ -10,11 +10,12 @@ const {
     setSensorMode,
     startTest,
     resetSensorTest,
-    processSensorResult
+    processSensorResult,
+    getFarmerMeasurements,
 } = require("../controllers/sensorController");
 
 // Fetch latest ThinkSpeak data and save to MongoDB
-router.get("/fetchAPI", fetchThinkSpeakData);
+// router.get("/fetchAPI", fetchThinkSpeakData);
 
 // Get latest sensor data
 router.get("/latestData", getLatestSensorData);
@@ -36,7 +37,11 @@ router.post('/startTest', startTest)
 router.post('/resetTest', resetSensorTest)
 
 
-router.get("/process-result", processSensorResult);
+// Start processing ThingSpeak data for a farmer
+router.post("/process-result", processSensorResult);
+
+// Get measurement history for a farmer
+router.get("/farmer/:farmerId/measurements", getFarmerMeasurements);
 
 
 module.exports = router;
