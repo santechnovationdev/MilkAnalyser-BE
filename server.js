@@ -11,6 +11,7 @@ const AuthRouter = require('./routes/AuthRouter')
 const dashboardRouter = require("./routes/dashboardRouter");
 const reportRoutes = require("./routes/reportRoutes");
 const farmerRoutes = require("./routes/farmerRoutes")
+const mqttRoutes = require("./routes/MqttRouter")
 
 const app = Express();
 const port = process.env.PORT || 5004;
@@ -60,7 +61,9 @@ app.use(AuthRouter)
 app.use(dashboardRouter)
 app.use(reportRoutes)
 app.use(farmerRoutes);
+app.use(mqttRoutes);
 
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 })
+
