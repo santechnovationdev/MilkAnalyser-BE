@@ -1,142 +1,138 @@
 const axios = require("axios");
 const SensorData = require("../models/SensorData");
+const { startCollection } = require("../services/thingSpeakService");
+const {mongoose} = require('mongoose')
 
 
-
-const saveThinkSpeakData = async (mode) => {
-    console.log("Mode:", mode)
-
-    const CHANNEL_ID = process.env.THINGSPEAK_CHANNEL_ID;
-    const READ_API_KEY = process.env.THINGSPEAK_READ_API_KEY;
-
-    const url = `https://api.thingspeak.com/channels/${CHANNEL_ID}/feeds/last.json?api_key=${READ_API_KEY}`;
-
-    const { data } = await axios.get(url);
-
-    console.log("ThingSpeak Sensor Data:", data);
-
-    if (!data) {
-        throw new Error("No data received from ThingSpeak.");
-    }
-
-    const entryId = data.entry_id;
-
-    const exists = await SensorData.findOne({ entryId });
-
-    if (exists) {
-        return {
-            created: false,
-            message: "Data already exists.",
-            sensorData: exists
-        };
-    }
-
-    let spectralAnalyses = [];
-    let spectralAdultration = [];
-
-    if (mode === 0) {
-
-        // field1 → Milk Adulteration
-        spectralAdultration = data.field1
-            ? data.field1.split(",").map(Number)
-            : [];
-
-        if (spectralAdultration.length !== 18) {
-            throw new Error(
-                `Invalid adulteration spectral data. Received: ${spectralAdultration.length}, Expected: 18`
-            );
-        }
-
-    } else if (mode === 1) {
-
-        // field2 → Milk Analysis
-        spectralAnalyses = data.field2
-            ? data.field2.split(",").map(Number)
-            : [];
-
-        if (spectralAnalyses.length !== 18) {
-            throw new Error(
-                `Invalid analysis spectral data. Received: ${spectralAnalyses.length}, Expected: 18`
-            );
-        }
-
-    } else {
-
-        throw new Error("Invalid sensor mode.");
-    }
-
-    const sensorData = await SensorData.create({
-        entryId,
-        spectralAnalyses,
-        spectralAdultration
-    });
-
-    return {
-        created: true,
-        message: "Sensor data stored successfully.",
-        sensorData
-    };
-};
-
-
+// Start ThingSpeak processing for the selected farmer and mode.
 const processSensorResult = async (req, res) => {
-
     try {
+        const farmerId = req.body?.farmerId;
+        const mode = Number(req.body?.mode);
 
-        const mode = Number(req.query.mode);
-        console.log("Mode:", mode)
+        // console.log("Farmer ID:", farmerId);
+        // console.log("Sensor mode:", mode);
 
-        if (mode !== 0 && mode !== 1) {
+        if (
+            !farmerId ||
+            !mongoose.Types.ObjectId.isValid(farmerId)
+        ) {
             return res.status(400).json({
                 success: false,
-                message: "Invalid sensor mode."
+                message: "A valid farmerId is required.",
             });
         }
 
-        const result = await saveThinkSpeakData(mode);
+        if (![0, 1].includes(mode)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid sensor mode. Use 0 or 1.",
+            });
+        }
 
-        return res.status(result.created ? 201 : 200).json({
+        const measurement = await startCollection(farmerId, mode);
+
+        return res.status(mode === 0 ? 202 : 201).json({
             success: true,
-            ...result
+            message:
+                mode === 0
+                    ? "Adulteration collection started for five minutes."
+                    : "Milk analysis value saved successfully.",
+            measurement,
         });
-
     } catch (error) {
+        console.error(
+            "Error processing sensor result:",
+            error.message
+        );
 
-        console.log("Error processing sensor result:", error);
+        return res.status(error.statusCode || 500).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
+
+// Retrieve measurement sessions for a specific farmer.
+const getFarmerMeasurements = async (req, res) => {
+    try {
+        const { farmerId } = req.params;
+
+        const mode =
+            req.query.mode === undefined
+                ? undefined
+                : Number(req.query.mode);
+
+        if (!mongoose.Types.ObjectId.isValid(farmerId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid farmerId.",
+            });
+        }
+
+        if (
+            mode !== undefined &&
+            ![0, 1].includes(mode)
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Mode must be 0 or 1.",
+            });
+        }
+
+        const filter = { farmerId };
+
+        if (mode !== undefined) {
+            filter.mode = mode;
+        }
+
+        const measurements = await SensorData.find(filter)
+            .sort({ startedAt: -1 })
+            .lean();
+
+        return res.status(200).json({
+            success: true,
+            count: measurements.length,
+            measurements,
+        });
+    } catch (error) {
+        console.error(
+            "Error retrieving farmer measurements:",
+            error.message
+        );
 
         return res.status(500).json({
             success: false,
-            message: error.message
+            message: error.message,
         });
-
     }
-
 };
 
 // Fetch data from ThinkSpeak and save to MongoDB
-const fetchThinkSpeakData = async (req, res) => {
+// const fetchThinkSpeakData = async (req, res) => {
 
-    try {
+//     try {
 
-        const result = await saveThinkSpeakData();
+//         const result = await saveThinkSpeakData();
 
-        return res.status(result.created ? 201 : 200).json({
-            success: true,
-            ...result
-        });
+//         return res.status(result.created ? 201 : 200).json({
+//             success: true,
+//             ...result
+//         });
 
-    } catch (error) {
+//     } catch (error) {
 
-        console.log("Error in fetch ThinkSpeak data:", error);
+//         console.log("Error in fetch ThinkSpeak data:", error);
 
-        return res.status(500).json({
-            success: false,
-            message: error.message
-        });
+//         return res.status(500).json({
+//             success: false,
+//             message: error.message
+//         });
 
-    }
+//     }
 
-};
+// };
 
 // Get latest sensor data
 const getLatestSensorData = async (req, res) => {
@@ -494,9 +490,10 @@ const resetSensorTest = async (req, res) => {
 };
 
 module.exports = {
-    fetchThinkSpeakData,
-    saveThinkSpeakData,
+    // fetchThinkSpeakData,
+    // saveThinkSpeakData,
     processSensorResult,
+    getFarmerMeasurements,
     getLatestSensorData,
     getAllSensorData,
     getSensorDataById,
