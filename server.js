@@ -12,7 +12,7 @@ const dashboardRouter = require("./routes/dashboardRouter");
 const reportRoutes = require("./routes/reportRoutes");
 const farmerRoutes = require("./routes/farmerRoutes")
 const mqttRoutes = require("./routes/MqttRouter")
-
+const { connectMQTT, resumeActiveCollection, } = require("./services/mqttxService");
 const app = Express();
 const port = process.env.PORT || 5004;
 
@@ -30,9 +30,15 @@ app.use(Express.urlencoded({ extended: true }));
 
 
 Mongoose.connect(process.env.MONGODB_URL)
-    .then(() => {
+    .then(async() => {
         console.log('Connected to MongoDB');
+        // Restore collection if server restarted
+        await resumeActiveCollection();
+
+        // Connect and subscribe to MQTT broker
+        await connectMQTT();
     })
+    
     .catch((err) => {
         console.log("Error in connecting to MongoDB:", err);
     })
@@ -61,9 +67,8 @@ app.use(AuthRouter)
 app.use(dashboardRouter)
 app.use(reportRoutes)
 app.use(farmerRoutes);
-app.use(mqttRoutes);
+ app.use(mqttRoutes);
 
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 })
-

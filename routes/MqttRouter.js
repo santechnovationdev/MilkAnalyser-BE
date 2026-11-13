@@ -1,94 +1,151 @@
 
 const express = require("express");
 const router = express.Router();
-const mqtt = require("mqtt");
 
-const client = mqtt.connect(`mqtts://${process.env.MQTT_HOST}:8883`,
-    {
-        clientId: "milkanalyser_backend_01",
-        username: process.env.MQTT_USERNAME,
-        password: process.env.MQTT_PASSWORD,
-        protocolVersion: 5,
-        reconnectPeriod: 5000,
-        connectTimeout: 30000,
-    }
-);
+const {
+    startCollection,
+    stopCollection,
+    getActiveCollection, publishSensorCommand
+} = require("../services/mqttxService");
 
-// MQTT Connected
-client.on("connect", () => {
-    console.log("EMQX Connected Successfully");
-
-    client.subscribe("milk/analyser/data",
-        { qos: 1 },
-        (err) => {
-            if (err) {
-                console.log("Subscribe Error:", err.message);
-            } else {
-                console.log("Subscribed: milk/analyzer/data");
-            }
-        }
-    );
-});
-
-// MQTT Error
-client.on("error", (err) => {
-    console.log("MQTT Error:", err.message);
-});
-
-// Receive Hardware / MQTTX Data
-client.on("message", (topic, message) => {
+// ------------------------------------
+// START COLLECTION
+// ------------------------------------
+router.post("/collection/start", async (req, res) => {
     try {
-        const data = JSON.parse(message.toString());
+        const { farmerId, mode = 0 } = req.body;
 
-        console.log("Received Topic:", topic);
-        console.log("Received Milk Data:", data);
+        if (!farmerId) {
+            return res.status(400).json({
+                success: false,
+                message: "Farmer ID is required",
+            });
+        }
 
-        // TODO: Save data to MongoDB
-        res.status(200).json({
+        const measurement = await startCollection(
+            farmerId,
+            mode
+        );
+
+        return res.status(201).json({
             success: true,
-            message: "Hardware Data Received Successfully",
-            receivedData: data
+            message: "MQTT Collection Started Successfully",
+            measurement,
         });
 
     } catch (error) {
-        console.log("Invalid MQTT JSON:", error.message);
+        console.error("Start Collection Error:", error.message);
+
+        return res.status(400).json({
+            success: false,
+            message: error.message,
+        });
     }
 });
 
-// React Start Button -> Backend -> Hardware
-router.post("/milk/analyser/start", (req, res) => {
+// ------------------------------------
+// STOP COLLECTION
+// ------------------------------------
+router.post("/collection/stop", async (req, res) => {
+    try {
+        const { measurementId } = req.body;
 
-    const command = {
-        deviceId: "milk_analyzer_01",
-        command: "START",
-        timestamp: new Date().toISOString()
-    };
-
-    if (!client.connected) {
-        return res.status(503).json({
-            success: false,
-            message: "MQTT Broker Not Connected"
-        });
-    }
-
-    client.publish("milk/analyser/command",
-        JSON.stringify(command),
-        { qos: 1 },
-        (err) => {
-            if (err) {
-                return res.status(500).json({
-                    success: false,
-                    message: "Command Publish Failed"
-                });
-            }
-
-            return res.status(200).json({
-                success: true,
-                message: "Milk Analyzer Start Command Sent",
-                data: command
+        if (!measurementId) {
+            return res.status(400).json({
+                success: false,
+                message: "Measurement ID is required",
             });
         }
-    );
+
+        const measurement = await stopCollection(
+            measurementId
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "MQTT Collection Stopped Successfully",
+            measurement,
+        });
+
+    } catch (error) {
+        console.error("Stop Collection Error:", error.message);
+
+        return res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+    }
+});
+
+// ------------------------------------
+// GET ACTIVE COLLECTION
+// ------------------------------------
+router.get("/collection/active", async (req, res) => {
+    try {
+        const measurement = await getActiveCollection();
+
+        return res.status(200).json({
+            success: true,
+            measurement,
+        });
+
+    } catch (error) {
+        console.error("Active Collection Error:", error.message);
+
+        return res.status(500).json({
+            success: false,
+            message: error.message,
+        });
+    }
+});
+
+
+// Toggle mode
+router.post("/sensor/mode", async (req, res) => {
+    try {
+        const mode = Number(req.body.mode);
+
+        const result = await publishSensorCommand(0, mode);
+
+        res.json({ success: true, result });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+    }
+});
+
+// Start test
+router.post("/sensor/start-test", async (req, res) => {
+    try {
+        const mode = Number(req.body.mode);
+
+        const result = await publishSensorCommand(1, mode);
+
+        res.json({ success: true, result });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+    }
+});
+
+// Reset test
+router.post("/sensor/reset-test", async (req, res) => {
+    try {
+        const mode = Number(req.body.mode);
+
+        const result = await publishSensorCommand(0, mode);
+
+        res.json({ success: true, result });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+    }
 });
 
 module.exports = router;

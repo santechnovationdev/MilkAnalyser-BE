@@ -49,16 +49,27 @@ const sensorDataSchema = new mongoose.Schema(
             default: null,
         },
 
+        // startEntryId: {
+        //     type: Number,
+        //     required: true,
+        // },
+
+        // lastProcessedEntryId: {
+        //     type: Number,
+        //     required: true,
+        // },
         startEntryId: {
             type: Number,
-            required: true,
+            default: null,
         },
-
         lastProcessedEntryId: {
             type: Number,
-            required: true,
+            default: null,
         },
-
+        stoppedAt: {
+            type: Date,
+            default: null,
+        },
         expectedReadings: {
             type: Number,
             default: null,
@@ -74,7 +85,7 @@ const sensorDataSchema = new mongoose.Schema(
             enum: ["running", "completed", "failed"],
             default: "running",
         },
-
+       
         lastError: {
             type: String,
             default: null,
