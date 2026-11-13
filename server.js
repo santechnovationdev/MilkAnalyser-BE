@@ -14,10 +14,10 @@ const farmerRoutes = require("./routes/farmerRoutes")
 const mqttRoutes = require("./routes/MqttRouter")
 const { connectMQTT, resumeActiveCollection, } = require("./services/mqttxService");
 const app = Express();
-const port = process.env.PORT || 5004;
+const port = process.env.PORT || 4023;
 
 const corsOptions = {
-    origin: ["http://localhost:4002", "http://localhost:3000", 'http://localhost:3001'],
+    origin: ["http://localhost:4002", "http://localhost:3000", 'http://localhost:3001', 'https://milkanalyser.santechnovation.com'],
     credentials: true,
 };
 
@@ -26,7 +26,7 @@ app.use(cors(corsOptions));
 app.use(Express.json());
 app.use(Express.urlencoded({ extended: true }));
 // app.use("/uploads", Express.static(path.join(__dirname, "uploads")));
-// app.set('trust proxy', 1)
+app.set('trust proxy', 1)
 
 
 Mongoose.connect(process.env.MONGODB_URL)
@@ -54,11 +54,11 @@ app.use(Session({
     resave: false,
     saveUninitialized: false,
     store: store,
-    // cookie: {
-    //     secure: true,
-    //     httpOnly: true,
-    //     sameSite: 'none'
-    // }
+    cookie: {
+        secure: true,
+        httpOnly: true,
+        sameSite: 'none'
+    }
 }))
 
 app.use(SensorDataRouter)
