@@ -1,26 +1,13 @@
-const UserModel = require('../models/User');
 
-const isAdmin = async (req, res, next) => {
-
-    try {
-        if (!req.session.user) {
-            return res.send({ success: false, message: 'Please login to access this page!' });
-        }
-        let fetchUser = null;
-        if (req.session.user.role === "farmer" || req.session.user.role === 'admin') {
-            fetchUser = await UserModel.findOne({ email: req.session.user.email.toLowerCase() });
-
-        }
-        if (!fetchUser) {
-            return res.send({ success: false, message: 'User not found!' });
-        }
-        next();
-    }
-    catch (err) {
-        console.log("Error in isAuth:", err);
-        return res.send({ success: false, message: 'Trouble in checking Authentication!' });
+const isAuth = (req, res, next) => {
+    if (!req.session || !req.session.user) {
+        return res.status(401).json({
+            success: false,
+            message: "Please login and try again."
+        });
     }
 
+    next();
 };
 
-module.exports = isAdmin;
+module.exports = isAuth;

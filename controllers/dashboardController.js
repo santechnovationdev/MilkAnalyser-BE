@@ -1,253 +1,223 @@
+
+"use strict";
+
 const UserModel = require("../models/User");
-const MilkCollection = require("../models/MilkCollection");
-const SensorData = require("../models/SensorData");
+const MilkTestSession = require("../models/MilkTestSession");
+const MilkPrediction = require("../models/MilkPrediction");
 
-const getDashboardData = async (req, res) => {
-
+const getAdminDashboard = async (req, res) => {
     try {
-
-        /* ---------------------------------
-           Total Farmers
-        ---------------------------------- */
-
-        const totalFarmers = await UserModel.countDocuments({
-            role: "farmer"
-        });
-
-        /* ---------------------------------
-           Today's Collection
-        ---------------------------------- */
-
-        const start = new Date();
-        start.setHours(0, 0, 0, 0);
-
-        const end = new Date();
-        end.setHours(23, 59, 59, 999);
-
-        const todayCollection = await MilkCollection.aggregate([
-            {
-                $match: {
-                    createdAt: {
-                        $gte: start,
-                        $lte: end
-                    }
-                }
-            },
-            {
-                $group: {
-                    _id: null,
-                    quantity: {
-                        $sum: "$quantity"
-                    }
-                }
-            }
-        ]);
-
-        /* ---------------------------------
-           Average Fat, Protein & SNF
-        ---------------------------------- */
-
-        const averages = await MilkCollection.aggregate([
-            {
-                $group: {
-                    _id: null,
-                    averageFat: {
-                        $avg: "$fat"
-                    },
-                    averageProtein: {
-                        $avg: "$protein"
-                    },
-                    averageSNF: {
-                        $avg: "$snf"
-                    }
-                }
-            }
-        ]);
-
-        /* ---------------------------------
-           Quality Chart
-        ---------------------------------- */
-
-        const qualityResult = await MilkCollection.aggregate([
-            {
-                $group: {
-                    _id: "$quality",
-                    total: {
-                        $sum: 1
-                    }
-                }
-            }
-        ]);
-
-        const qualityChart = {
-            good: 0,
-            average: 0,
-            poor: 0
-        };
-
-        qualityResult.forEach((item) => {
-
-            if (item._id === "Good") {
-                qualityChart.good = item.total;
-            }
-
-            if (item._id === "Average") {
-                qualityChart.average = item.total;
-            }
-
-            if (item._id === "Poor") {
-                qualityChart.poor = item.total;
-            }
-
-        });
-
-        /* ---------------------------------
-           Quality Percentage
-        ---------------------------------- */
-
-        const totalRecords = await MilkCollection.countDocuments();
-
-        const goodRecords = await MilkCollection.countDocuments({
-            quality: "Good"
-        });
-
-        const qualityPercentage =
-            totalRecords > 0
-                ? Number(((goodRecords / totalRecords) * 100).toFixed(2))
-                : 0;
-
-        /* ---------------------------------
-           Weekly Collection Trend
-        ---------------------------------- */
-
-        const lastWeek = new Date();
-        lastWeek.setDate(lastWeek.getDate() - 6);
-        lastWeek.setHours(0, 0, 0, 0);
-
-        const trendResult = await MilkCollection.aggregate([
-            {
-                $match: {
-                    createdAt: {
-                        $gte: lastWeek
-                    }
-                }
-            },
-            {
-                $group: {
-                    _id: {
-                        $dateToString: {
-                            format: "%d-%m",
-                            date: "$createdAt"
-                        }
-                    },
-                    quantity: {
-                        $sum: "$quantity"
-                    }
-                }
-            },
-            {
-                $sort: {
-                    _id: 1
-                }
-            }
-        ]);
-
-        const collectionTrend = {
-            labels: trendResult.map(item => item._id),
-            data: trendResult.map(item => item.quantity)
-        };
-
-        /* ---------------------------------
-           Recent Collections
-        ---------------------------------- */
-
-        const recentCollections = await MilkCollection.find()
-            .populate("farmerId", "fullname contact")
-            .select("quantity fat protein snf water quality adulteration createdAt")
-            .sort({
-                createdAt: -1
-            })
-            .limit(5);
-
-        /* ---------------------------------
-           Latest Sensor Data
-        ---------------------------------- */
-
-        const latestSensor = await SensorData.findOne()
-            .sort({
-                createdAt: -1
+        if (req.user?.role !== "admin") {
+            return res.status(403).json({
+                success: false,
+                message: "Admin access required.",
             });
+        }
 
-        /* ---------------------------------
-           Response
-        ---------------------------------- */
+        // ----------------------------------------
+        // 1. BASIC COUNTS
+        // ----------------------------------------
+
+        const [
+            totalFarmers,
+            totalTests,
+            completedTests,
+            failedTests,
+            milkAnalysisTests,
+            adulterationTests,
+        ] = await Promise.all([
+            UserModel.countDocuments({ role: "farmer" }),
+
+            MilkTestSession.countDocuments({}),
+
+            MilkTestSession.countDocuments({
+                status: "COMPLETED",
+            }),
+
+            MilkTestSession.countDocuments({
+                status: "FAILED",
+            }),
+
+            MilkTestSession.countDocuments({
+                mode: 1,
+                status: "COMPLETED",
+            }),
+
+            MilkTestSession.countDocuments({
+                mode: 0,
+                status: "COMPLETED",
+            }),
+        ]);
+
+        // ----------------------------------------
+        // 2. COMPLETED MILK ANALYSIS SESSIONS
+        // ----------------------------------------
+
+        const analysisSessions = await MilkTestSession.find({
+            mode: 1,
+            status: "COMPLETED",
+        })
+            .select("_id")
+            .lean();
+
+        const analysisTestIds = analysisSessions.map(
+            (session) => session._id
+        );
+
+        // ----------------------------------------
+        // 3. FETCH MILK ANALYSIS PREDICTIONS
+        // ----------------------------------------
+
+        const analysisPredictions = analysisTestIds.length
+            ? await MilkPrediction.find({
+                testId: { $in: analysisTestIds },
+            })
+                .select("testId fat snf water createdAt")
+                .lean()
+            : [];
+
+        // ----------------------------------------
+        // 4. CALCULATE AVERAGES
+        // ----------------------------------------
+
+        const getAverage = (items, field) => {
+            const values = items
+                .map((item) => Number(item[field]))
+                .filter((value) => Number.isFinite(value));
+
+            if (!values.length) return 0;
+
+            return Number(
+                (
+                    values.reduce((total, value) => total + value, 0) /
+                    values.length
+                ).toFixed(2)
+            );
+        };
+
+        const averageFat = getAverage(analysisPredictions, "fat");
+        const averageSNF = getAverage(analysisPredictions, "snf");
+        const averageWater = getAverage(analysisPredictions, "water");
+
+        // ----------------------------------------
+        // 5. COMPLETION PERCENTAGE
+        // ----------------------------------------
+
+        const completionPercentage = totalTests
+            ? Number(((completedTests / totalTests) * 100).toFixed(1))
+            : 0;
+
+        // ----------------------------------------
+        // 6. RECENT TEST SESSIONS
+        // ----------------------------------------
+
+        const recentSessions = await MilkTestSession.find({})
+            .sort({ createdAt: -1 })
+            .limit(10)
+            .populate(
+                "farmerId",
+                "userId fullname contact village"
+            )
+            .lean();
+
+        const recentTestIds = recentSessions.map(
+            (session) => session._id
+        );
+
+        const recentPredictions = recentTestIds.length
+            ? await MilkPrediction.find({
+                testId: { $in: recentTestIds },
+            }).lean()
+            : [];
+
+        const predictionMap = new Map(
+            recentPredictions.map((prediction) => [
+                String(prediction.testId),
+                prediction,
+            ])
+        );
+
+        const recentTests = recentSessions.map((session) => {
+            const prediction = predictionMap.get(
+                String(session._id)
+            ) || null;
+
+            return {
+                _id: session._id,
+
+                farmer: session.farmerId
+                    ? {
+                        userId: session.farmerId.userId,
+                        fullname: session.farmerId.fullname,
+                        contact: session.farmerId.contact,
+                        village: session.farmerId.village,
+                    }
+                    : null,
+
+                mode: session.mode,
+                status: session.status,
+
+                totalReadings: session.totalReadings || 0,
+
+                startedAt: session.startedAt,
+                completedAt: session.completedAt,
+                createdAt: session.createdAt,
+
+                prediction: prediction
+                    ? {
+                        fat: prediction.fat ?? null,
+                        snf: prediction.snf ?? null,
+                        water: prediction.water ?? null,
+
+                        adulterationType:
+                            prediction.adulterationType ?? null,
+
+                        confidence:
+                            prediction.confidence ?? null,
+                    }
+                    : null,
+            };
+        });
+
+        // ----------------------------------------
+        // 7. RESPONSE
+        // ----------------------------------------
 
         return res.status(200).json({
-
             success: true,
+            message: "Admin dashboard data retrieved successfully.",
 
             cards: {
-
                 totalFarmers,
+                totalTests,
+                completedTests,
+                failedTests,
+                completionPercentage,
 
-                todayCollection:
-                    todayCollection.length > 0
-                        ? todayCollection[0].quantity
-                        : 0,
-
-                averageFat:
-                    averages.length > 0
-                        ? Number(averages[0].averageFat.toFixed(2))
-                        : 0,
-
-                averageProtein:
-                    averages.length > 0
-                        ? Number(averages[0].averageProtein.toFixed(2))
-                        : 0,
-
-                averageSNF:
-                    averages.length > 0
-                        ? Number(averages[0].averageSNF.toFixed(2))
-                        : 0,
-
-                qualityPercentage
-
+                averageFat,
+                averageSNF,
+                averageWater,
             },
 
-            qualityChart,
+            chart: {
+                milkAnalysis: milkAnalysisTests,
+                adulteration: adulterationTests,
+                failed: failedTests,
+            },
 
-            collectionTrend,
-
-            recentCollections,
-
-            latestSensor: latestSensor
-                ? {
-                    temperature: latestSensor.temperature,
-                    ultrasonic: latestSensor.ultrasonic,
-                    spectral: latestSensor.spectral
-                }
-                : null
-
+            recentTests,
         });
 
-    }
-
-    catch (err) {
-
-        console.log(err);
+    } catch (error) {
+        console.error("Admin Dashboard Error:", error);
 
         return res.status(500).json({
-
             success: false,
-
-            message: err.message
-
+            message: "Unable to retrieve admin dashboard data.",
         });
-
     }
-
 };
 
 module.exports = {
-    getDashboardData
+    getAdminDashboard,
 };

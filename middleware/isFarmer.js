@@ -1,56 +1,44 @@
+
 const UserModel = require("../models/User");
 
 const isFarmer = async (req, res, next) => {
-
     try {
-
-        if (!req.session.user) {
-
-            return res.send({
+        if (!req.session?.user?.email) {
+            return res.status(401).json({
                 success: false,
-                message: "Please login to access this page!"
+                message: "Please login and try again."
             });
-
         }
 
-        if (req.session.user.role !== "farmer") {
-
-            return res.send({
-                success: false,
-                message: "Access denied! Farmers only."
-            });
-
-        }
-
-        const fetchUser = await UserModel.findOne({
+        const user = await UserModel.findOne({
             email: req.session.user.email.toLowerCase()
         });
 
-        if (!fetchUser) {
-
-            return res.send({
+        if (!user) {
+            return res.status(401).json({
                 success: false,
-                message: "User not found!"
+                message: "User not found."
             });
-
         }
 
-        req.user = fetchUser;
+        if (user.role !== "farmer") {
+            return res.status(403).json({
+                success: false,
+                message: "Access denied. Farmers only."
+            });
+        }
 
+        req.user = user;
         next();
 
-    }
-    catch (err) {
+    } catch (error) {
+        console.error("Farmer authentication error:", error);
 
-        console.log("Error in isFarmer:", err);
-
-        return res.send({
+        return res.status(500).json({
             success: false,
-            message: "Trouble in checking Authentication!"
+            message: "Authentication failed."
         });
-
     }
-
 };
 
 module.exports = isFarmer;

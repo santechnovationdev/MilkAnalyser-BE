@@ -10,6 +10,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@tensorflow/tfjs": "^4.22.0",
     "axios": "^1.18.1",
     "connect-mongodb-session": "^5.0.0",
     "cors": "^2.8.6",
@@ -18,6 +19,7 @@
     "express-session": "^1.19.0",
     "mongoose": "^8.24.1",
     "mqtt": "^5.16.1",
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "xlsx": "^0.18.5"
   }
 }

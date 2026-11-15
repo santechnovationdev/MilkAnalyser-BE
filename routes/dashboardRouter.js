@@ -1,9 +1,21 @@
+
 const express = require("express");
 const router = express.Router();
 
-const { getDashboardData } = require("../controllers/dashboardController");
-const isAuth = require("../middleware/isAuth");
+const {
+    getAdminDashboard,
+} = require("../controllers/DashboardController");
 
-router.get("/dashboard", isAuth, getDashboardData);
+const {
+    isAuthenticated,
+    isAdmin,
+} = require("../middleware/milkTestAuth");
+
+router.get(
+    "/admin",
+    isAuthenticated,
+    isAdmin,
+    getAdminDashboard
+);
 
 module.exports = router;
