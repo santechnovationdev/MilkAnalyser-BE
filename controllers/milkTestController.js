@@ -299,13 +299,13 @@ const stopMilkTest = async (req, res) => {
             });
         }
 
-        if (!["STARTING", "RUNNING"].includes(session.status)) {
-            return res.status(400).json({
-                success: false,
-                message:
-                    `Cannot stop test with status ${session.status}.`
-            });
-        }
+        // if (!["STARTING", "RUNNING"].includes(session.status)) {
+        //     return res.status(400).json({
+        //         success: false,
+        //         message:
+        //             `Cannot stop test with status ${session.status}.`
+        //     });
+        // }
 
         // Stop the active hardware test.
         const result = await milkTestService.stopTest({

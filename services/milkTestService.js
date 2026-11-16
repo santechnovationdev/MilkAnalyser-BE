@@ -1,4 +1,6 @@
 
+"use strict";
+
 const MilkTestSession = require("../models/MilkTestSession");
 const MilkTestReading = require("../models/MilkTestReading");
 const MilkPrediction = require("../models/MilkPrediction");
@@ -6,6 +8,7 @@ const MilkPrediction = require("../models/MilkPrediction");
 const {
     publishMode,
     publishEnable,
+    publishPrediction,
     getMQTTStatus,
     mqttEvents
 } = require("./milkTestMqttService");
@@ -18,7 +21,10 @@ const {
     predictMilkAnalysis
 } = require("../ml/milkAnalysisPredictionService");
 
-// Shared device topic root
+// ============================================
+// CONFIGURATION
+// ============================================
+
 const DEVICE_ID =
     process.env.MQTT_TOPIC_ROOT || "san-milk-a84f29/01";
 
@@ -49,7 +55,10 @@ function runExclusive(operation) {
     const result = operationQueue.then(operation);
 
     operationQueue = result.catch(error => {
-        console.error("Milk test operation queue error:", error);
+        console.error(
+            "Milk test operation queue error:",
+            error.message
+        );
     });
 
     return result;
@@ -91,7 +100,22 @@ function registerMQTTListeners() {
     mqttEvents.on("spectrum", handleSpectrum);
 
     mqttEvents.on("mqttError", error => {
-        console.error("Milk Test MQTT Error:", error);
+        console.error(
+            "Milk Test MQTT Error:",
+            error
+        );
+    });
+
+    mqttEvents.on("offline", () => {
+        console.warn("Milk Test MQTT connection offline.");
+    });
+
+    mqttEvents.on("reconnecting", () => {
+        console.log("Milk Test MQTT reconnecting...");
+    });
+
+    mqttEvents.on("connected", () => {
+        console.log("Milk Test MQTT connected.");
     });
 
     console.log("Milk Test MQTT listeners registered.");
@@ -135,7 +159,6 @@ function handleSpectrum(data) {
 
     const session = activeSession;
 
-    // Compare using the custom farmer ID from MQTT topic.
     const farmerCustomId = String(
         data?.farmerCustomId || ""
     );
@@ -150,7 +173,7 @@ function handleSpectrum(data) {
         return;
     }
 
-    // Accept readings only while collection is active.
+    // Accept incoming readings only during collection.
     if (!["STARTING", "RUNNING"].includes(session.status)) {
         return;
     }
@@ -165,7 +188,9 @@ function handleSpectrum(data) {
             !Number.isFinite(value)
         )
     ) {
-        console.error("Invalid spectral data received.");
+        console.error(
+            "Invalid spectral data received."
+        );
         return;
     }
 
@@ -183,7 +208,6 @@ function handleSpectrum(data) {
         const sequenceNumber =
             currentSession.totalReadings + 1;
 
-        // Keep MongoDB ObjectId for database relationships.
         await MilkTestReading.create({
             testId: currentSession._id,
             farmerId: currentSession.farmerId,
@@ -213,10 +237,18 @@ function handleSpectrum(data) {
             }
         );
 
+        // Keep the in-memory status synchronized.
+        if (
+            activeSession &&
+            String(activeSession._id) === String(session._id) &&
+            activeSession.status === "STARTING"
+        ) {
+            activeSession.status = "RUNNING";
+        }
+
         console.log(
             `Milk reading saved: ${sequenceNumber}, Test: ${session._id}`
         );
-
     }).catch(error => {
         console.error(
             "Failed to save milk spectral reading:",
@@ -318,7 +350,7 @@ async function createAdulterationResult(readings) {
     const bestClassKey = classKeys.reduce(
         (best, current) =>
             averagedProbabilities[current] >
-            averagedProbabilities[best]
+                averagedProbabilities[best]
                 ? current
                 : best
     );
@@ -340,7 +372,7 @@ async function createAdulterationResult(readings) {
     }
 
     return {
-        // Current training dataset has no pure-milk class.
+        // Training dataset does not contain a pure-milk class.
         adulterationPresent: null,
 
         adulterationType: bestClass.adulterantType,
@@ -423,7 +455,10 @@ async function processMilkTest(sessionId) {
     }
 
     if (session.status === "COMPLETED") {
-        console.log("Milk test already completed:", sessionId);
+        console.log(
+            "Milk test already completed:",
+            sessionId
+        );
 
         return MilkPrediction.findOne({
             testId: sessionId
@@ -432,7 +467,8 @@ async function processMilkTest(sessionId) {
 
     if (session.status === "FAILED") {
         throw new Error(
-            session.lastError || "Milk test session has failed."
+            session.lastError ||
+            "Milk test session has failed."
         );
     }
 
@@ -474,10 +510,7 @@ async function processMilkTest(sessionId) {
 
         let predictionData = {};
 
-        // ========================================
         // MODE 0 - ADULTERATION
-        // ========================================
-
         if (session.mode === 0) {
             const result =
                 await createAdulterationResult(readings);
@@ -487,10 +520,7 @@ async function processMilkTest(sessionId) {
             };
         }
 
-        // ========================================
         // MODE 1 - MILK QUALITY ANALYSIS
-        // ========================================
-
         else if (session.mode === 1) {
             const result =
                 await createMilkAnalysisResult(readings);
@@ -504,10 +534,7 @@ async function processMilkTest(sessionId) {
             );
         }
 
-        // ========================================
         // SAVE FINAL PREDICTION
-        // ========================================
-
         const savedPrediction = await saveMilkPrediction({
             testId: session._id,
             farmerId: session.farmerId,
@@ -518,10 +545,7 @@ async function processMilkTest(sessionId) {
             predictedAt: new Date()
         });
 
-        // ========================================
         // SEND FINAL RESULT TO HARDWARE
-        // ========================================
-
         const hardwarePrediction = {
             testId: String(session._id),
             farmerCustomId: session.farmerCustomId,
@@ -536,10 +560,7 @@ async function processMilkTest(sessionId) {
             hardwarePrediction
         );
 
-        // ========================================
         // MARK SESSION COMPLETED
-        // ========================================
-
         await MilkTestSession.findByIdAndUpdate(
             sessionId,
             {
@@ -609,14 +630,16 @@ async function resumeActiveCollection() {
         String(existingSession._id)
     );
 
-    // Do not automatically restart hardware.
-    // A STOPPING session needs explicit recovery handling.
+    // A STOPPING session can be retried by the Stop API
+    // after MQTT reconnects. Do not automatically send
+    // duplicate hardware commands during initialization.
     if (existingSession.status === "STOPPING") {
         console.warn(
-            "Recovered session was STOPPING. Verify hardware state before proceeding."
+            "Recovered STOPPING session. Retry Stop after MQTT reconnects."
         );
     }
 
+    // Resume a session whose prediction processing was interrupted.
     if (existingSession.status === "PROCESSING") {
         console.log(
             "Recovered PROCESSING session. Resuming prediction."
@@ -626,6 +649,7 @@ async function resumeActiveCollection() {
             await processMilkTest(existingSession._id);
 
             activeSession = null;
+
         } catch (error) {
             console.error(
                 "Recovered prediction failed:",
@@ -691,276 +715,359 @@ async function initializeMilkTestService() {
     );
 }
 
-/* ============================================
-   START MILK TEST
-============================================ */
+// ============================================
+// START MILK TEST
+// ============================================
 
-async function startTest({
-    farmerId,
-    farmerCustomId,
-    requestedBy,
-    requestedByRole,
-    mode
-}) {
-    try {
-        // Validate required fields.
-        if (!farmerId || !farmerCustomId || !requestedBy) {
-            throw new Error(
-                "Farmer ID, Farmer Custom ID and Requested By are required."
-            );
-        }
-
-        if (![0, 1].includes(Number(mode))) {
-            throw new Error(
-                "Invalid test mode. Mode must be 0 or 1."
-            );
-        }
-
-        const normalizedMode = Number(mode);
-
-        // Only one physical analyzer can run one test at a time.
-        if (activeSession) {
-            const existingSession = await MilkTestSession.findById(
-                activeSession._id
-            );
-
-            if (
-                existingSession &&
-                ACTIVE_STATUSES.includes(existingSession.status)
-            ) {
-                throw new Error(
-                    "Milk Analyzer is currently busy with another test."
-                );
-            }
-
-            activeSession = null;
-        }
-
-        // Check the hardware MQTT connection.
-        const mqttStatus = getMQTTStatus();
-
-        if (!mqttStatus?.connected) {
-            throw new Error(
-                "MQTT device connection is unavailable."
-            );
-        }
-
-        // Wait for previous reading operations before starting a new test.
-        await readingQueue;
-
-        // Clear old errors for the new test.
-        readingSaveErrors = [];
-
-        // Create new session.
-        const session = await MilkTestSession.create({
+async function startTest(params = {}) {
+    return runExclusive(async () => {
+        const {
             farmerId,
             farmerCustomId,
             requestedBy,
             requestedByRole,
-            deviceId: DEVICE_ID,
-            mode: normalizedMode,
-            status: "STARTING",
-            startedAt: new Date(),
-            totalReadings: 0
-        });
-
-        activeSession = session;
+            mode
+        } = params;
 
         try {
-            // Send selected mode to hardware.
-            await publishMode(
+            if (!farmerId || !farmerCustomId || !requestedBy) {
+                throw new Error(
+                    "Farmer ID, Farmer Custom ID and Requested By are required."
+                );
+            }
+
+            if (![0, 1].includes(Number(mode))) {
+                throw new Error(
+                    "Invalid test mode. Mode must be 0 or 1."
+                );
+            }
+
+            // Check the shared analyzer.
+            if (activeSession) {
+                const existingSession =
+                    await MilkTestSession.findById(
+                        activeSession._id
+                    );
+
+                if (
+                    existingSession &&
+                    ACTIVE_STATUSES.includes(existingSession.status)
+                ) {
+                    throw new Error(
+                        "Milk Analyzer is currently busy with another test."
+                    );
+                }
+
+                activeSession = null;
+            }
+
+            // Check MQTT before creating a session.
+            const mqttStatus = getMQTTStatus();
+
+            if (!mqttStatus?.connected) {
+                throw new Error(
+                    "MQTT device connection is unavailable."
+                );
+            }
+
+            // Wait for previous reading operations.
+            await readingQueue;
+
+            // Clear previous errors for this new test.
+            readingSaveErrors = [];
+
+            // Create new test session.
+            const session = await MilkTestSession.create({
+                farmerId,
                 farmerCustomId,
-                String(normalizedMode)
+                requestedBy,
+                requestedByRole,
+                deviceId: DEVICE_ID,
+                mode: Number(mode),
+                status: "STARTING",
+                startedAt: new Date(),
+                totalReadings: 0
+            });
+
+            activeSession = session;
+
+            try {
+                // Send selected mode to hardware.
+                await publishMode(
+                    farmerCustomId,
+                    String(Number(mode))
+                );
+
+                // Enable sensor data collection.
+                await publishEnable(
+                    farmerCustomId,
+                    "1"
+                );
+
+                await MilkTestSession.findByIdAndUpdate(
+                    session._id,
+                    {
+                        $set: {
+                            startCommandSentAt: new Date()
+                        }
+                    }
+                );
+
+                console.log(
+                    "Milk test started:",
+                    {
+                        testId: String(session._id),
+                        farmerCustomId,
+                        mode: Number(mode)
+                    }
+                );
+
+                return await MilkTestSession.findById(
+                    session._id
+                )
+                    .populate(
+                        "farmerId",
+                        "userId fullname email contact village"
+                    )
+                    .populate(
+                        "requestedBy",
+                        "userId fullname email role"
+                    );
+
+            } catch (commandError) {
+                await MilkTestSession.findByIdAndUpdate(
+                    session._id,
+                    {
+                        $set: {
+                            status: "FAILED",
+                            lastError: commandError.message
+                        }
+                    }
+                );
+
+                activeSession = null;
+
+                throw commandError;
+            }
+
+        } catch (error) {
+            console.error(
+                "Start Milk Test Error:",
+                error.message
             );
 
-            // Enable sensor data collection.
+            throw error;
+        }
+    });
+}
+
+// ============================================
+// STOP MILK TEST
+// ============================================
+
+async function stopTest({
+    testId,
+    requestedBy,
+    requestedByRole
+} = {}) {
+    return runExclusive(async () => {
+        try {
+            if (!activeSession) {
+                throw new Error(
+                    "No active Milk Analyzer test found."
+                );
+            }
+
+            const session = await MilkTestSession.findById(
+                activeSession._id
+            );
+
+            if (!session) {
+                activeSession = null;
+
+                throw new Error(
+                    "Active Milk Test session not found."
+                );
+            }
+
+            // Validate requested test ID.
+            if (
+                testId &&
+                String(session._id) !== String(testId)
+            ) {
+                throw new Error(
+                    "The requested test is not the active Milk Analyzer test."
+                );
+            }
+
+            // Already completed.
+            if (session.status === "COMPLETED") {
+                activeSession = null;
+
+                return {
+                    success: true,
+                    alreadyCompleted: true,
+                    message: "Milk test has already been completed.",
+                    testId: String(session._id),
+                    status: session.status
+                };
+            }
+
+            if (session.status === "FAILED") {
+                activeSession = null;
+
+                throw new Error(
+                    session.lastError ||
+                    "Cannot stop a failed Milk Test session."
+                );
+            }
+
+            if (
+                !["STARTING", "RUNNING", "STOPPING", "PROCESSING"]
+                    .includes(session.status)
+            ) {
+                throw new Error(
+                    `Cannot stop test with status ${session.status}.`
+                );
+            }
+
+            // If prediction is already running, do not start it again.
+            if (session.status === "PROCESSING") {
+                return {
+                    success: true,
+                    alreadyProcessing: true,
+                    message: "Milk test prediction is already processing.",
+                    testId: String(session._id),
+                    status: session.status
+                };
+            }
+
+            // Check MQTT BEFORE changing the session status.
+            // If disconnected, leave the session unchanged.
+            const mqttStatus = getMQTTStatus();
+
+            if (!mqttStatus?.connected) {
+                throw new Error(
+                    "MQTT broker is disconnected. Wait for reconnection and try Stop again."
+                );
+            }
+
+            // Mark the session STOPPING only once.
+            if (session.status !== "STOPPING") {
+                session.status = "STOPPING";
+                session.stoppedAt = new Date();
+
+                await session.save();
+            }
+
+            activeSession = session;
+
+            console.log(
+                "Milk test STOP command requested:",
+                String(session._id)
+            );
+
+            // Publish STOP command.
+            // enable = 0 is safe to retry.
             await publishEnable(
-                farmerCustomId,
-                "1"
+                session.farmerCustomId,
+                "0"
             );
 
             await MilkTestSession.findByIdAndUpdate(
                 session._id,
                 {
                     $set: {
-                        startCommandSentAt: new Date()
+                        stopCommandSentAt: new Date()
                     }
                 }
             );
 
             console.log(
-                "Milk test started:",
-                {
-                    testId: String(session._id),
-                    farmerCustomId,
-                    mode: normalizedMode
-                }
+                "MQTT STOP command published:",
+                String(session._id)
             );
 
-            return await MilkTestSession.findById(
-                session._id
-            )
-                .populate(
-                    "farmerId",
-                    "userId fullname email contact village"
-                )
-                .populate(
-                    "requestedBy",
-                    "userId fullname email role"
-                );
+            // Wait for all queued sensor readings.
+            await readingQueue;
 
-        } catch (commandError) {
+            if (readingSaveErrors.length > 0) {
+                throw new Error(
+                    `Unable to save ${readingSaveErrors.length} sensor reading(s).`
+                );
+            }
+
+            // Update session to PROCESSING.
             await MilkTestSession.findByIdAndUpdate(
                 session._id,
                 {
                     $set: {
-                        status: "FAILED",
-                        lastError: commandError.message
+                        status: "PROCESSING"
                     }
                 }
             );
 
+            activeSession = await MilkTestSession.findById(
+                session._id
+            );
+
+            console.log(
+                "Milk test prediction started:",
+                String(session._id)
+            );
+
+            // Run the selected ML model.
+            const prediction = await processMilkTest(
+                session._id
+            );
+
             activeSession = null;
 
-            throw commandError;
-        }
-
-    } catch (error) {
-        console.error(
-            "Start Milk Test Error:",
-            error.message
-        );
-
-        throw error;
-    }
-}
-
-/* ============================================
-   STOP MILK TEST
-============================================ */
-
-async function stopTest({
-    requestedBy,
-    requestedByRole
-} = {}) {
-    try {
-        if (!activeSession) {
-            throw new Error(
-                "No active Milk Analyzer test found."
+            console.log(
+                "Milk test completed successfully:",
+                String(session._id)
             );
-        }
 
-        const session = await MilkTestSession.findById(
-            activeSession._id
-        );
+            return {
+                success: true,
+                message: "Milk test completed successfully.",
+                testId: String(session._id),
+                farmerCustomId: session.farmerCustomId,
+                mode: session.mode,
+                prediction
+            };
 
-        if (!session) {
-            activeSession = null;
-
-            throw new Error(
-                "Active Milk Test session not found."
+        } catch (error) {
+            console.error(
+                "Stop Milk Test Error:",
+                error.message
             );
-        }
 
-        if (
-            ["STOPPING", "PROCESSING", "COMPLETED"].includes(
-                session.status
-            )
-        ) {
-            throw new Error(
-                `Milk test is already ${session.status.toLowerCase()}.`
-            );
-        }
+            // Preserve STOPPING for retry if MQTT publishing failed.
+            // Clear in-memory session only if DB says it is no longer active.
+            if (activeSession) {
+                const latestSession =
+                    await MilkTestSession.findById(activeSession._id)
+                        .catch(() => null);
 
-        if (session.status === "FAILED") {
-            throw new Error(
-                "Cannot stop a failed Milk Test session."
-            );
-        }
-
-        // Mark the session as stopping.
-        session.status = "STOPPING";
-        session.stoppedAt = new Date();
-
-        await session.save();
-
-        activeSession = session;
-
-        // Stop hardware collection.
-        await publishEnable(
-            session.farmerCustomId,
-            "0"
-        );
-
-        await MilkTestSession.findByIdAndUpdate(
-            session._id,
-            {
-                $set: {
-                    stopCommandSentAt: new Date()
+                if (
+                    !latestSession ||
+                    ["FAILED", "COMPLETED"].includes(latestSession.status)
+                ) {
+                    activeSession = null;
+                } else {
+                    activeSession = latestSession;
                 }
             }
-        );
 
-        console.log(
-            "Milk test collection stopped:",
-            String(session._id)
-        );
-
-        // Wait until all received readings are saved.
-        await readingQueue;
-
-        if (readingSaveErrors.length > 0) {
-            throw new Error(
-                `Unable to save ${readingSaveErrors.length} sensor reading(s).`
-            );
+            throw error;
         }
-
-        // Update status before prediction.
-        await MilkTestSession.findByIdAndUpdate(
-            session._id,
-            {
-                $set: {
-                    status: "PROCESSING"
-                }
-            }
-        );
-
-        activeSession = session;
-
-        // Run the selected ML model.
-        const prediction = await processMilkTest(
-            session._id
-        );
-
-        activeSession = null;
-
-        console.log(
-            "Milk test completed successfully:",
-            String(session._id)
-        );
-
-        return {
-            success: true,
-            message: "Milk test completed successfully.",
-            testId: String(session._id),
-            farmerCustomId: session.farmerCustomId,
-            mode: session.mode,
-            prediction
-        };
-
-    } catch (error) {
-        console.error(
-            "Stop Milk Test Error:",
-            error.message
-        );
-
-        throw error;
-    }
+    });
 }
 
-/* ============================================
-   MODULE EXPORTS
-============================================ */
+// ============================================
+// MODULE EXPORTS
+// ============================================
 
 module.exports = {
     initializeMilkTestService,
