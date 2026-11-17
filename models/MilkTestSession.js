@@ -84,6 +84,11 @@ const milkTestSessionSchema = new mongoose.Schema(
             default: null
         },
 
+        autoStopAt: {
+            type: Date,
+            default: null,
+            index: true
+        },
         stopCommandSentAt: {
             type: Date,
             default: null
