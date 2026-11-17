@@ -24,6 +24,33 @@ const milkPredictionSchema = new mongoose.Schema(
         },
 
         // =================================
+        // SAMPLE TYPE PREDICTION
+        // =================================
+
+        sampleType: {
+            type: String,
+            enum: ["Milk", "Pure Water", "Empty Glass"],
+            default: "Milk"
+        },
+
+        sampleTypeConfidence: {
+            type: Number,
+            default: null,
+            min: 0,
+            max: 1
+        },
+
+        requiresMilk: {
+            type: Boolean,
+            default: false
+        },
+
+        message: {
+            type: String,
+            default: null
+        },
+
+        // =================================
         // MODE 0 - ADULTERATION PREDICTION
         // =================================
 
@@ -89,14 +116,40 @@ const milkPredictionSchema = new mongoose.Schema(
 );
 
 // =================================
-// VALIDATION BASED ON TEST MODE
+// VALIDATION BASED ON SAMPLE TYPE
 // =================================
 
 milkPredictionSchema.pre("validate", function (next) {
 
+    // Failed predictions do not require prediction values.
     if (this.predictionStatus === "failed") {
         return next();
     }
+
+    // =================================
+    // NON-MILK SAMPLE VALIDATION
+    // =================================
+
+    if (
+        this.sampleType === "Pure Water" ||
+        this.sampleType === "Empty Glass"
+    ) {
+        this.requiresMilk = true;
+
+        if (!this.message) {
+            this.message = "Please add milk to the glass.";
+        }
+
+        // No adulteration or milk analysis prediction
+        // should be required for non-milk samples.
+        return next();
+    }
+
+    // =================================
+    // MILK SAMPLE VALIDATION
+    // =================================
+
+    this.requiresMilk = false;
 
     // MODE 0 - Adulteration detection
     if (this.mode === 0) {
@@ -124,9 +177,6 @@ milkPredictionSchema.pre("validate", function (next) {
                 )
             );
         }
-
-        // adulterationPresent remains null because
-        // the current dataset has no pure-milk class.
     }
 
     // MODE 1 - Milk analysis

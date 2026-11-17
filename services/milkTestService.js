@@ -1097,6 +1097,9 @@ const {
 } = require("./milkTestMqttService");
 
 const {
+    predictSampleType
+} = require("../ml/sampleTypePredictionService");
+const {
     predictAdulteration
 } = require("../ml/adulterationPredictionService");
 
@@ -1504,6 +1507,112 @@ async function saveMilkPrediction(predictionData) {
     return prediction;
 }
 
+
+// ============================================
+// SAMPLE TYPE PREDICTION
+// ============================================
+
+async function createSampleTypeResult(readings) {
+
+    const results = [];
+
+    // Predict sample type for every spectral reading.
+    for (const reading of readings) {
+
+        const result = await predictSampleType(
+            reading.spectralValues
+        );
+
+        if (
+            !result?.success ||
+            !result.prediction ||
+            !result.probabilities
+        ) {
+            throw new Error(
+                "Invalid sample type prediction result."
+            );
+        }
+
+        results.push(result);
+    }
+
+    if (!results.length) {
+        throw new Error(
+            "No sample type predictions were generated."
+        );
+    }
+
+    const sampleTypes = [
+        "Milk",
+        "Pure Water",
+        "Empty Glass"
+    ];
+
+    const averagedProbabilities = {};
+
+    // Average each class probability across all readings.
+    for (const sampleType of sampleTypes) {
+
+        let total = 0;
+
+        for (const result of results) {
+
+            const probability =
+                result.probabilities[sampleType]?.probability;
+
+            if (
+                typeof probability !== "number" ||
+                !Number.isFinite(probability) ||
+                probability < 0 ||
+                probability > 1
+            ) {
+                throw new Error(
+                    `Invalid sample type probability: ${sampleType}`
+                );
+            }
+
+            total += probability;
+        }
+
+        averagedProbabilities[sampleType] =
+            total / results.length;
+    }
+
+    // Select the sample type with the highest average probability.
+    const detectedSampleType = sampleTypes.reduce(
+        (best, current) =>
+            averagedProbabilities[current] >
+                averagedProbabilities[best]
+                ? current
+                : best
+    );
+
+    const confidence =
+        averagedProbabilities[detectedSampleType];
+
+    const requiresMilk =
+        detectedSampleType !== "Milk";
+
+    return {
+        sampleType: detectedSampleType,
+
+        sampleTypeConfidence: Number(
+            confidence.toFixed(6)
+        ),
+
+        requiresMilk,
+
+        message: requiresMilk
+            ? "Please add milk to the glass."
+            : "Milk sample detected.",
+
+        modelVersion:
+            results[0].model?.version || "1.0.0",
+
+        probabilities: averagedProbabilities
+    };
+}
+
 // ============================================
 // MODE 0 - ADULTERATION PREDICTION
 // ============================================
@@ -1676,7 +1785,13 @@ async function createMilkAnalysisResult(readings) {
 // PROCESS MILK TEST PREDICTION
 // ============================================
 
+
+// ============================================
+// PROCESS MILK TEST PREDICTION
+// ============================================
+
 async function processMilkTest(sessionId) {
+
     const session = await MilkTestSession.findById(sessionId);
 
     if (!session) {
@@ -1684,6 +1799,7 @@ async function processMilkTest(sessionId) {
     }
 
     if (session.status === "COMPLETED") {
+
         console.log(
             "Milk test already completed:",
             sessionId
@@ -1702,6 +1818,7 @@ async function processMilkTest(sessionId) {
     }
 
     try {
+
         await MilkTestSession.findByIdAndUpdate(
             sessionId,
             {
@@ -1712,7 +1829,7 @@ async function processMilkTest(sessionId) {
             }
         );
 
-        // Ensure all queued sensor readings are saved.
+        // Wait until all sensor readings are saved.
         await readingQueue;
 
         if (readingSaveErrors.length > 0) {
@@ -1737,50 +1854,135 @@ async function processMilkTest(sessionId) {
             `Processing ${readings.length} readings for test ${sessionId}`
         );
 
-        let predictionData = {};
+        // ============================================
+        // STEP 1 - SAMPLE TYPE DETECTION
+        // ============================================
 
-        // MODE 0 - ADULTERATION
-        if (Number(session.mode) === 0) {
-            const result =
-                await createAdulterationResult(readings);
+        console.log(
+            "Starting sample type detection..."
+        );
 
-            predictionData = {
-                ...result
-            };
-        }
+        const sampleResult =
+            await createSampleTypeResult(readings);
 
-        // MODE 1 - MILK QUALITY ANALYSIS
-        else if (Number(session.mode) === 1) {
-            const result =
-                await createMilkAnalysisResult(readings);
+        console.log(
+            "Sample type detection result:",
+            sampleResult
+        );
 
-            predictionData = {
-                ...result
-            };
-        } else {
-            throw new Error(
-                `Unsupported milk test mode: ${session.mode}`
+        let predictionData = {
+            sampleType: sampleResult.sampleType,
+
+            sampleTypeConfidence:
+                sampleResult.sampleTypeConfidence,
+
+            requiresMilk: sampleResult.requiresMilk,
+
+            message: sampleResult.message,
+
+            modelVersion: sampleResult.modelVersion
+        };
+
+        // ============================================
+        // STEP 2 - CHECK SAMPLE TYPE
+        // ============================================
+
+        if (sampleResult.requiresMilk) {
+
+            console.log(
+                "Non-milk sample detected. Skipping milk prediction."
             );
+
+            // Do not run adulteration or milk analysis models.
+            // Keep all milk-specific prediction fields null.
+
+        } else {
+
+            console.log(
+                "Milk sample detected. Starting milk prediction..."
+            );
+
+            // ============================================
+            // STEP 3 - RUN EXISTING MODE 0 OR MODE 1
+            // ============================================
+
+            if (Number(session.mode) === 0) {
+
+                console.log(
+                    "Running adulteration prediction..."
+                );
+
+                const result =
+                    await createAdulterationResult(readings);
+
+                predictionData = {
+                    ...predictionData,
+                    ...result
+                };
+
+            } else if (Number(session.mode) === 1) {
+
+                console.log(
+                    "Running milk analysis prediction..."
+                );
+
+                const result =
+                    await createMilkAnalysisResult(readings);
+
+                predictionData = {
+                    ...predictionData,
+                    ...result
+                };
+
+            } else {
+
+                throw new Error(
+                    `Unsupported milk test mode: ${session.mode}`
+                );
+            }
+
+            // Preserve the existing milk model version.
+            predictionData.modelVersion =
+                predictionData.modelVersion || "1.0.0";
         }
 
-        // SAVE FINAL PREDICTION
+        // ============================================
+        // STEP 4 - SAVE FINAL PREDICTION
+        // ============================================
+
         const savedPrediction = await saveMilkPrediction({
+
             testId: session._id,
+
             farmerId: session.farmerId,
+
             deviceId: session.deviceId,
+
             mode: session.mode,
+
             totalReadings: readings.length,
+
             ...predictionData,
+
             predictedAt: new Date()
         });
 
-        // SEND FINAL RESULT TO HARDWARE
+        // ============================================
+        // STEP 5 - SEND RESULT TO HARDWARE
+        // ============================================
+
         const hardwarePrediction = {
+
             testId: String(session._id),
+
             farmerCustomId: session.farmerCustomId,
+
             mode: session.mode,
+
             totalReadings: readings.length,
+
             prediction: predictionData,
+
             completedAt: new Date().toISOString()
         };
 
@@ -1789,7 +1991,10 @@ async function processMilkTest(sessionId) {
             hardwarePrediction
         );
 
-        // MARK SESSION COMPLETED
+        // ============================================
+        // STEP 6 - MARK SESSION COMPLETED
+        // ============================================
+
         await MilkTestSession.findByIdAndUpdate(
             sessionId,
             {
@@ -1804,12 +2009,17 @@ async function processMilkTest(sessionId) {
 
         console.log(
             "Milk test prediction completed:",
-            sessionId
+            {
+                testId: sessionId,
+                sampleType: sampleResult.sampleType,
+                mode: session.mode
+            }
         );
 
         return savedPrediction;
 
     } catch (error) {
+
         console.error(
             "Milk test prediction processing failed:",
             error
@@ -1828,6 +2038,7 @@ async function processMilkTest(sessionId) {
         throw error;
     }
 }
+
 
 
 

@@ -13,16 +13,22 @@ const SPECTRAL_COLUMNS = [
 const DATASET_PATHS = {
     adulteration: path.join(
         __dirname,
-        "../datasets/Milk_Adulteration_Combined_Labeled_Dataset_Final.xlsx"
+        "../datasets/Milk_Adulteration_Updated_With_Water_Empty.xlsx"
     ),
 
     analysis: path.join(
         __dirname,
-        "../datasets/Milk_Analysis_Combined_Labeled_Dataset_Final.xlsx"
+        "../datasets/Milk_Analysis_Updated_With_Water_Empty.xlsx"
     )
 };
 
-// Read the first worksheet from an Excel workbook.
+const SAMPLE_TYPE_MAPPING = {
+    Milk: 0,
+    "Pure Water": 1,
+    "Empty Glass": 2
+};
+
+// Read the Combined Dataset worksheet.
 function readExcel(filePath) {
     const workbook = XLSX.readFile(filePath);
 
@@ -77,7 +83,7 @@ function toNumber(value, fieldName, rowNumber) {
     return number;
 }
 
-// Adulteration classification dataset.
+// 1. Adulteration classification dataset (9 classes).
 function loadAdulterationDataset() {
     const rows = readExcel(DATASET_PATHS.adulteration);
 
@@ -103,7 +109,7 @@ function loadAdulterationDataset() {
         if (
             !Number.isInteger(label) ||
             label < 1 ||
-            label > 7
+            label > 9
         ) {
             throw new Error(
                 `Invalid adulteration label at row ${rowNumber}.`
@@ -120,12 +126,14 @@ function loadAdulterationDataset() {
         labels,
         originalLabels,
         featureNames: SPECTRAL_COLUMNS,
-        classCount: 7,
+        classCount: 9,
         sampleCount: features.length
     };
 }
 
-// Milk analysis regression dataset.
+// 2. Milk analysis regression dataset.
+// Only Milk rows are used because Pure Water and Empty Glass
+// do not contain Fat, SNF and Water target values.
 function loadMilkAnalysisDataset() {
     const rows = readExcel(DATASET_PATHS.analysis);
 
@@ -143,6 +151,12 @@ function loadMilkAnalysisDataset() {
     rows.forEach((row, index) => {
         const rowNumber = index + 2;
 
+        if (
+            String(row.Sample_Type || "").trim() !== "Milk"
+        ) {
+            return;
+        }
+
         const spectralValues = SPECTRAL_COLUMNS.map(
             column => toNumber(row[column], column, rowNumber)
         );
@@ -155,12 +169,71 @@ function loadMilkAnalysisDataset() {
         targets.push(targetValues);
     });
 
+    if (!features.length) {
+        throw new Error("No valid Milk samples found for regression.");
+    }
+
     return {
         features,
         targets,
         featureNames: SPECTRAL_COLUMNS,
         targetNames: targetColumns,
         sampleCount: features.length
+    };
+}
+
+// 3. Sample type classification dataset.
+// Milk = 0, Pure Water = 1, Empty Glass = 2.
+function loadSampleTypeDataset() {
+    const rows = readExcel(DATASET_PATHS.analysis);
+
+    validateSpectralColumns(rows);
+
+    const features = [];
+    const labels = [];
+    const originalLabels = [];
+
+    rows.forEach((row, index) => {
+        const rowNumber = index + 2;
+
+        const sampleType = String(
+            row.Sample_Type || ""
+        ).trim();
+
+        if (
+            !Object.prototype.hasOwnProperty.call(
+                SAMPLE_TYPE_MAPPING,
+                sampleType
+            )
+        ) {
+            throw new Error(
+                `Invalid Sample_Type "${sampleType}" at row ${rowNumber}.`
+            );
+        }
+
+        const spectralValues = SPECTRAL_COLUMNS.map(
+            column => toNumber(row[column], column, rowNumber)
+        );
+
+        const label = SAMPLE_TYPE_MAPPING[sampleType];
+
+        features.push(spectralValues);
+        labels.push(label);
+        originalLabels.push(sampleType);
+    });
+
+    return {
+        features,
+        labels,
+        originalLabels,
+        featureNames: SPECTRAL_COLUMNS,
+        classCount: 3,
+        sampleCount: features.length,
+        labelMapping: {
+            0: "Milk",
+            1: "Pure Water",
+            2: "Empty Glass"
+        }
     };
 }
 
@@ -223,15 +296,24 @@ function inverseTransformData(data, scaler) {
     );
 }
 
+// Dataset summary.
 function getDatasetSummary() {
     const adulteration = loadAdulterationDataset();
     const analysis = loadMilkAnalysisDataset();
+    const sampleType = loadSampleTypeDataset();
 
-    const classDistribution = {};
+    const adulterationDistribution = {};
 
     adulteration.originalLabels.forEach(label => {
-        classDistribution[label] =
-            (classDistribution[label] || 0) + 1;
+        adulterationDistribution[label] =
+            (adulterationDistribution[label] || 0) + 1;
+    });
+
+    const sampleTypeDistribution = {};
+
+    sampleType.originalLabels.forEach(label => {
+        sampleTypeDistribution[label] =
+            (sampleTypeDistribution[label] || 0) + 1;
     });
 
     return {
@@ -239,12 +321,21 @@ function getDatasetSummary() {
             samples: adulteration.sampleCount,
             features: adulteration.featureNames.length,
             classes: adulteration.classCount,
-            classDistribution
+            classDistribution: adulterationDistribution
         },
+
         analysis: {
             samples: analysis.sampleCount,
             features: analysis.featureNames.length,
             targets: analysis.targetNames
+        },
+
+        sampleType: {
+            samples: sampleType.sampleCount,
+            features: sampleType.featureNames.length,
+            classes: sampleType.classCount,
+            classDistribution: sampleTypeDistribution,
+            labelMapping: sampleType.labelMapping
         }
     };
 }
@@ -253,6 +344,7 @@ module.exports = {
     SPECTRAL_COLUMNS,
     loadAdulterationDataset,
     loadMilkAnalysisDataset,
+    loadSampleTypeDataset,
     fitStandardScaler,
     transformData,
     inverseTransformData,

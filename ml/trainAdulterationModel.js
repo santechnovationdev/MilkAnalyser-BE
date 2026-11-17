@@ -23,7 +23,7 @@ const MODEL_PATH = path.join(
     "adulteration-model.json"
 );
 
-// Numeric label mapping
+// Numeric label mapping - 9 classes
 const LABEL_MAPPING = {
     1: "Sugar",
     2: "Formalin",
@@ -31,7 +31,9 @@ const LABEL_MAPPING = {
     4: "Starch",
     5: "Hydrogen Peroxide",
     6: "Urea",
-    7: "Detergent and Soap"
+    7: "Detergent and Soap",
+    8: "Pure Water",
+    9: "Empty Glass"
 };
 
 // Reproducible random generator
@@ -102,11 +104,11 @@ function stratifiedSplit(features, labels) {
     };
 }
 
-// Confusion matrix
+// Confusion matrix - 9 classes
 function calculateConfusionMatrix(actual, predicted) {
     const matrix = Array.from(
-        { length: 7 },
-        () => Array(7).fill(0)
+        { length: 9 },
+        () => Array(9).fill(0)
     );
 
     actual.forEach((actualLabel, index) => {
@@ -130,11 +132,11 @@ async function saveModel(model, scaler, validationAccuracy) {
 
     const modelData = {
         modelName: "Milk Adulteration Classification",
-        version: "1.0.0",
+        version: "2.0.0",
         createdAt: new Date().toISOString(),
 
         inputFeatures: 18,
-        outputClasses: 7,
+        outputClasses: 9,
 
         architecture: {
             hiddenLayers: [64, 32],
@@ -220,7 +222,7 @@ async function trainAdulterationModel() {
 
         yTrainTensor = tf.oneHot(
             yTrainIndexTensor,
-            7
+            9
         );
 
         yTrainIndexTensor.dispose();
@@ -234,7 +236,7 @@ async function trainAdulterationModel() {
 
         yValidationTensor = tf.oneHot(
             yValidationIndexTensor,
-            7
+            9
         );
 
         yValidationIndexTensor.dispose();
@@ -340,7 +342,8 @@ async function trainAdulterationModel() {
             validationAccuracy
         );
 
-        console.log("\nFinal Training Accuracy:",
+        console.log(
+            "\nFinal Training Accuracy:",
             (history.history.acc.at(-1) * 100).toFixed(2) + "%"
         );
 

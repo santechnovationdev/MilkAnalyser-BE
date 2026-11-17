@@ -4,7 +4,6 @@ const fs = require("fs");
 const path = require("path");
 
 const {
-    SPECTRAL_COLUMNS,
     transformData
 } = require("./datasetService");
 
@@ -39,7 +38,7 @@ async function loadAdulterationModel() {
 
     if (
         savedData.inputFeatures !== 18 ||
-        savedData.outputClasses !== 7 ||
+        savedData.outputClasses !== 9 ||
         !Array.isArray(savedData.weights) ||
         !savedData.scaler
     ) {
@@ -89,7 +88,9 @@ function validateSpectralValues(spectralValues) {
         const number = Number(value);
 
         if (!Number.isFinite(number)) {
-            throw new Error("Spectral values must be finite numbers.");
+            throw new Error(
+                "Spectral values must be finite numbers."
+            );
         }
 
         return number;
@@ -134,8 +135,8 @@ async function predictAdulteration(spectralValues) {
             }
         });
 
-        // Model classes are internally 0-6.
-        // Original dataset labels are 1-7.
+        // Model classes are internally 0-8.
+        // Original dataset labels are 1-9.
         const predictedLabel = predictedIndex + 1;
 
         const adulterantType =
