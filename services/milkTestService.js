@@ -1491,7 +1491,23 @@ function handleSpectrum(data) {
 // SAVE PREDICTION IN MONGODB
 // ============================================
 
+
 async function saveMilkPrediction(predictionData) {
+    console.log("\n========== BEFORE SAVING PREDICTION ==========");
+    console.log("Incoming sample type fields:", {
+        sampleType: predictionData.sampleType,
+        sampleTypeConfidence: predictionData.sampleTypeConfidence,
+        requiresMilk: predictionData.requiresMilk,
+        message: predictionData.message
+    });
+
+    console.log("Schema paths:", {
+        sampleType: MilkPrediction.schema.path("sampleType")?.instance,
+        sampleTypeConfidence: MilkPrediction.schema.path("sampleTypeConfidence")?.instance,
+        requiresMilk: MilkPrediction.schema.path("requiresMilk")?.instance,
+        message: MilkPrediction.schema.path("message")?.instance
+    });
+
     let prediction = await MilkPrediction.findOne({
         testId: predictionData.testId
     });
@@ -1502,7 +1518,17 @@ async function saveMilkPrediction(predictionData) {
         Object.assign(prediction, predictionData);
     }
 
+    console.log("Before save:", prediction.toObject());
+
     await prediction.save();
+
+    const savedDocument = await MilkPrediction.findById(
+        prediction._id
+    ).lean();
+
+    console.log("After save - MongoDB document:", savedDocument);
+
+    console.log("==============================================\n");
 
     return prediction;
 }
