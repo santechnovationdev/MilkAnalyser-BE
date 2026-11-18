@@ -51,16 +51,16 @@ app.use(
         resave: false,
         saveUninitialized: false,
         store: store,
-        // cookie: {
-        //     secure: true,
-        //     httpOnly: true,
-        //     sameSite: 'none'
-        // }
+        cookie: {
+            secure: true,
+            httpOnly: true,
+            sameSite: 'none'
+        }
     }))
 
 
 
-// app.set('trust proxy', 1)
+app.set('trust proxy', 1)
 
 // API routes
 app.use(SensorDataRouter);
