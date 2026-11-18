@@ -70,11 +70,8 @@ app.post("/send-otp", async (req, res) => {
 
         await user.save();
 
-        console.log("OTP:", otp);
-        console.log("OTP expiry:", expiryTime);
 
         // ✅ SEND BASED ON TYPE
-
 
         const transporter = nodemailer.createTransport({
             service: "gmail",
@@ -96,7 +93,6 @@ app.post("/send-otp", async (req, res) => {
         });
 
 
-
     } catch (err) {
         console.log(err);
         res.status(500).send({ success: false });
@@ -112,12 +108,8 @@ app.post("/verify-otp", async (req, res) => {
         console.log("verify:", email)
 
         const query = email
-        console.log("Query:-", query)
-
+     
         const user = await otpmodel.findOne({ email: query });
-        console.log(user)
-        console.log(user.otp)
-        console.log(otp)
 
         if (!user) {
             return res.json({ success: false, message: "User not found" });
