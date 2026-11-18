@@ -18,8 +18,8 @@ const otp = require('./routes/OTPRouter')
 
 const milkTestRouter = require("./routes/milkTestRoutes");
 const farmerDashboardRouter = require("./routes/FarmerDashboardRouter");
-const {connectMQTT, resumeActiveCollection} = require("./services/mqttxService");
-const { initializeMilkTestService} = require("./services/milkTestService");
+const { connectMQTT, resumeActiveCollection } = require("./services/mqttxService");
+const { initializeMilkTestService } = require("./services/milkTestService");
 
 const app = Express();
 const port = process.env.PORT || 4023;
@@ -51,16 +51,16 @@ app.use(
         resave: false,
         saveUninitialized: false,
         store: store,
-        // cookie: {
-        //     secure: true,
-        //     httpOnly: true,
-        //     sameSite: 'none'
-        // }
+        cookie: {
+            secure: true,
+            httpOnly: true,
+            sameSite: 'none'
+        }
     }))
 
 
 
-// app.set('trust proxy', 1)
+app.set('trust proxy', 1)
 
 // API routes
 app.use(SensorDataRouter);
