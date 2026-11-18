@@ -39,7 +39,7 @@ const createAdulterationModel = () => {
     // Output layer: 9 adulteration classes
     model.add(
         tf.layers.dense({
-            units: 9,
+            units: 10,
             activation: "softmax"
         })
     );

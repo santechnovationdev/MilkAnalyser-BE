@@ -1643,6 +1643,7 @@ async function createSampleTypeResult(readings) {
 // MODE 0 - ADULTERATION PREDICTION
 // ============================================
 
+
 async function createAdulterationResult(readings) {
     const results = [];
 
@@ -1733,9 +1734,12 @@ async function createAdulterationResult(readings) {
         );
     }
 
+    // Pure Milk means no adulteration detected.
+    const adulterationPresent =
+        bestClass.adulterantType !== "Pure Milk";
+
     return {
-        // Training dataset does not contain a pure-milk class.
-        adulterationPresent: null,
+        adulterationPresent,
 
         adulterationType: bestClass.adulterantType,
 
@@ -1744,9 +1748,10 @@ async function createAdulterationResult(readings) {
         ),
 
         modelVersion:
-            results[0].model?.version || "1.0.0"
+            results[0].model?.version || "3.0.0"
     };
 }
+
 
 // ============================================
 // MODE 1 - MILK ANALYSIS PREDICTION

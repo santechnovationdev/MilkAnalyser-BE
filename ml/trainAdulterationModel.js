@@ -23,19 +23,6 @@ const MODEL_PATH = path.join(
     "adulteration-model.json"
 );
 
-// Numeric label mapping - 9 classes
-const LABEL_MAPPING = {
-    1: "Sugar",
-    2: "Formalin",
-    3: "Neutralizers",
-    4: "Starch",
-    5: "Hydrogen Peroxide",
-    6: "Urea",
-    7: "Detergent and Soap",
-    8: "Pure Water",
-    9: "Empty Glass"
-};
-
 // Reproducible random generator
 function createRandomGenerator(seed = 42) {
     let value = seed;
@@ -104,11 +91,11 @@ function stratifiedSplit(features, labels) {
     };
 }
 
-// Confusion matrix - 9 classes
-function calculateConfusionMatrix(actual, predicted) {
+// Dynamic confusion matrix
+function calculateConfusionMatrix(actual, predicted, classCount) {
     const matrix = Array.from(
-        { length: 9 },
-        () => Array(9).fill(0)
+        { length: classCount },
+        () => Array(classCount).fill(0)
     );
 
     actual.forEach((actualLabel, index) => {
@@ -118,8 +105,14 @@ function calculateConfusionMatrix(actual, predicted) {
     return matrix;
 }
 
-// Save weights and preprocessing information.
-async function saveModel(model, scaler, validationAccuracy) {
+// Save weights and preprocessing information
+async function saveModel(
+    model,
+    scaler,
+    validationAccuracy,
+    classCount,
+    labelMapping
+) {
     if (!fs.existsSync(MODEL_DIRECTORY)) {
         fs.mkdirSync(MODEL_DIRECTORY, {
             recursive: true
@@ -132,11 +125,11 @@ async function saveModel(model, scaler, validationAccuracy) {
 
     const modelData = {
         modelName: "Milk Adulteration Classification",
-        version: "2.0.0",
+        version: "3.0.0",
         createdAt: new Date().toISOString(),
 
         inputFeatures: 18,
-        outputClasses: 9,
+        outputClasses: classCount,
 
         architecture: {
             hiddenLayers: [64, 32],
@@ -147,7 +140,7 @@ async function saveModel(model, scaler, validationAccuracy) {
 
         weights,
         scaler,
-        labelMapping: LABEL_MAPPING,
+        labelMapping,
         validationAccuracy
     };
 
@@ -179,9 +172,29 @@ async function trainAdulterationModel() {
         // 1. Load dataset
         const dataset = loadAdulterationDataset();
 
+        const classCount = dataset.classCount;
+        const labelMapping = dataset.labelMapping;
+
         console.log("Total samples:", dataset.sampleCount);
         console.log("Features:", dataset.featureNames.length);
-        console.log("Classes:", dataset.classCount);
+        console.log("Classes:", classCount);
+
+        console.log("\nLabel Mapping:");
+        console.log(labelMapping);
+
+        // Validate labels
+        const invalidLabels = dataset.labels.filter(
+            label =>
+                !Number.isInteger(label) ||
+                label < 0 ||
+                label >= classCount
+        );
+
+        if (invalidLabels.length > 0) {
+            throw new Error(
+                "Dataset contains invalid class labels."
+            );
+        }
 
         // 2. Split dataset
         const split = stratifiedSplit(
@@ -222,7 +235,7 @@ async function trainAdulterationModel() {
 
         yTrainTensor = tf.oneHot(
             yTrainIndexTensor,
-            9
+            classCount
         );
 
         yTrainIndexTensor.dispose();
@@ -236,13 +249,22 @@ async function trainAdulterationModel() {
 
         yValidationTensor = tf.oneHot(
             yValidationIndexTensor,
-            9
+            classCount
         );
 
         yValidationIndexTensor.dispose();
 
         // 5. Create model
         model = createAdulterationModel();
+
+        const modelOutputClasses = model.outputs[0].shape.at(-1);
+
+        if (modelOutputClasses !== classCount) {
+            throw new Error(
+                `Model output has ${modelOutputClasses} classes, ` +
+                `but dataset contains ${classCount} classes.`
+            );
+        }
 
         model.summary();
 
@@ -264,12 +286,18 @@ async function trainAdulterationModel() {
 
                 callbacks: {
                     onEpochEnd: async (epoch, logs) => {
+                        const accuracy =
+                            logs.acc ?? logs.accuracy ?? 0;
+
+                        const validationAccuracy =
+                            logs.val_acc ?? logs.val_accuracy ?? 0;
+
                         console.log(
                             `Epoch ${epoch + 1}/100 | ` +
                             `Loss: ${logs.loss.toFixed(4)} | ` +
-                            `Accuracy: ${(logs.acc * 100).toFixed(2)}% | ` +
+                            `Accuracy: ${(accuracy * 100).toFixed(2)}% | ` +
                             `Val Loss: ${logs.val_loss.toFixed(4)} | ` +
-                            `Val Accuracy: ${(logs.val_acc * 100).toFixed(2)}%`
+                            `Val Accuracy: ${(validationAccuracy * 100).toFixed(2)}%`
                         );
                     }
                 }
@@ -328,7 +356,8 @@ async function trainAdulterationModel() {
 
         const confusionMatrix = calculateConfusionMatrix(
             split.yValidation,
-            predictedLabels
+            predictedLabels,
+            classCount
         );
 
         console.log("\nConfusion Matrix:");
@@ -339,12 +368,19 @@ async function trainAdulterationModel() {
         await saveModel(
             model,
             scaler,
-            validationAccuracy
+            validationAccuracy,
+            classCount,
+            labelMapping
         );
+
+        const trainingAccuracy =
+            history.history.acc?.at(-1) ??
+            history.history.accuracy?.at(-1) ??
+            0;
 
         console.log(
             "\nFinal Training Accuracy:",
-            (history.history.acc.at(-1) * 100).toFixed(2) + "%"
+            (trainingAccuracy * 100).toFixed(2) + "%"
         );
 
         console.log("\nTraining completed successfully!");

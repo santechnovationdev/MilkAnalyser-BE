@@ -13,7 +13,7 @@ const SPECTRAL_COLUMNS = [
 const DATASET_PATHS = {
     adulteration: path.join(
         __dirname,
-        "../datasets/Milk_Adulteration_Updated_With_Water_Empty.xlsx"
+        "../datasets/Milk_Adulteration_Updated_With_Pure_Milk.xlsx"
     ),
 
     analysis: path.join(
@@ -26,6 +26,21 @@ const SAMPLE_TYPE_MAPPING = {
     Milk: 0,
     "Pure Water": 1,
     "Empty Glass": 2
+};
+
+// Adulteration label mapping.
+// Model labels are zero-based internally.
+const ADULTERATION_LABEL_MAPPING = {
+    0: "Sugar",
+    1: "Formalin",
+    2: "Neutralizers",
+    3: "Starch",
+    4: "Hydrogen Peroxide",
+    5: "Urea",
+    6: "Detergent and Soap",
+    7: "Pure Water",
+    8: "Empty Glass",
+    9: "Pure Milk"
 };
 
 // Read the Combined Dataset worksheet.
@@ -83,7 +98,7 @@ function toNumber(value, fieldName, rowNumber) {
     return number;
 }
 
-// 1. Adulteration classification dataset (9 classes).
+// 1. Adulteration classification dataset (10 classes).
 function loadAdulterationDataset() {
     const rows = readExcel(DATASET_PATHS.adulteration);
 
@@ -109,7 +124,7 @@ function loadAdulterationDataset() {
         if (
             !Number.isInteger(label) ||
             label < 1 ||
-            label > 9
+            label > 10
         ) {
             throw new Error(
                 `Invalid adulteration label at row ${rowNumber}.`
@@ -117,7 +132,10 @@ function loadAdulterationDataset() {
         }
 
         features.push(spectralValues);
+
+        // Convert Excel labels 1-10 into model labels 0-9.
         labels.push(label - 1);
+
         originalLabels.push(label);
     });
 
@@ -126,8 +144,9 @@ function loadAdulterationDataset() {
         labels,
         originalLabels,
         featureNames: SPECTRAL_COLUMNS,
-        classCount: 9,
-        sampleCount: features.length
+        classCount: 10,
+        sampleCount: features.length,
+        labelMapping: ADULTERATION_LABEL_MAPPING
     };
 }
 
@@ -321,7 +340,8 @@ function getDatasetSummary() {
             samples: adulteration.sampleCount,
             features: adulteration.featureNames.length,
             classes: adulteration.classCount,
-            classDistribution: adulterationDistribution
+            classDistribution: adulterationDistribution,
+            labelMapping: adulteration.labelMapping
         },
 
         analysis: {
@@ -342,6 +362,7 @@ function getDatasetSummary() {
 
 module.exports = {
     SPECTRAL_COLUMNS,
+    ADULTERATION_LABEL_MAPPING,
     loadAdulterationDataset,
     loadMilkAnalysisDataset,
     loadSampleTypeDataset,
