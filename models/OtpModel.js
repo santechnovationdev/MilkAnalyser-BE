@@ -3,8 +3,6 @@ const mongoose = require('mongoose')
 
 const otpSchema = mongoose.Schema({
     email: { type: String },
-    mobilenumber: { type: String },
-    whatsappnumber: { type: String },
     otp: { type: Number },
     otpExpiry: { type: Date },
     lastOtpSent: { type: Number },

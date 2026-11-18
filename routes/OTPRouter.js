@@ -26,11 +26,11 @@ app.post("/send-otp", async (req, res) => {
         );
 
         if (!user) {
-            user = new otpmodel({ email:   email });
+            user = new otpmodel({ email: email });
         }
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-        const expiryTime = new Date(Date.now() + 2 * 60 * 1000); // 30 sec
+        const expiryTime = new Date(Date.now() + 2 * 60 * 1000); // 120 sec
 
         user.otp = otp;
         user.otpExpiry = expiryTime; // ✅ FIXED
@@ -74,30 +74,27 @@ app.post("/send-otp", async (req, res) => {
         console.log("OTP expiry:", expiryTime);
 
         // ✅ SEND BASED ON TYPE
-       
-            console.log("email verified:", type)
-            const transporter = nodemailer.createTransport({
-                service: "gmail",
-                auth: {
-                    user: process.env.User_email,
-                    pass: process.env.User_passkey
-                }
-            });
 
-            await transporter.sendMail({
-                to: email,
-                subject: "OTP Verification",
-                text: `Your OTP is ${otp}. It expires in 2 minutes.`
-            });
-            return res.json({
-                success: true,
-                message: "OTP sent successfully",
-                type
-            });
 
-        
-       
-     
+        const transporter = nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+                user: process.env.User_email,
+                pass: process.env.User_passkey
+            }
+        });
+
+        await transporter.sendMail({
+            to: email,
+            subject: "OTP Verification",
+            text: `Your OTP is ${otp}. It expires in 2 minutes.`
+        });
+        return res.json({
+            success: true,
+            message: "OTP sent successfully",
+
+        });
+
 
 
     } catch (err) {
@@ -111,13 +108,13 @@ app.post("/send-otp", async (req, res) => {
 app.post("/verify-otp", async (req, res) => {
 
     try {
-        const { email, otp} = req.body;
+        const { email, otp } = req.body;
         console.log("verify:", email)
 
         const query = email
         console.log("Query:-", query)
 
-        const user = await otpmodel.findOne( { email: query.email } );
+        const user = await otpmodel.findOne({ email: query });
         console.log(user)
         console.log(user.otp)
         console.log(otp)
