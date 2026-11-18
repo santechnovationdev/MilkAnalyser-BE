@@ -165,6 +165,7 @@ const getAdminDashboard = async (req, res) => {
 
                 prediction: prediction
                     ? {
+                        sampleType: prediction.sampleType ?? null,
                         fat: prediction.fat ?? null,
                         snf: prediction.snf ?? null,
                         water: prediction.water ?? null,

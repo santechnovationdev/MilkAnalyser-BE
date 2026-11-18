@@ -103,6 +103,8 @@ const getFarmerDashboard = async (req, res) => {
                         ? "Milk Analysis"
                         : "Adulteration",
 
+                    sampleType: prediction.sampleType,
+
                     date:
                         session.completedAt ||
                         prediction.predictedAt ||
