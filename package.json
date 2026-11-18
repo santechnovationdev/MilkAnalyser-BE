@@ -19,6 +19,7 @@
     "express-session": "^1.19.0",
     "mongoose": "^8.24.1",
     "mqtt": "^5.16.1",
+    "nodemailer": "^10.6.0",
     "nodemon": "^3.1.14",
     "xlsx": "^0.18.5"
   }
