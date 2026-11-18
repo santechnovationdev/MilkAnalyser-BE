@@ -14,17 +14,12 @@ const dashboardRouter = require("./routes/dashboardRouter");
 const reportRoutes = require("./routes/reportRoutes");
 const farmerRoutes = require("./routes/farmerRoutes");
 const mqttRoutes = require("./routes/MqttRouter");
+const otp = require('./routes/OTPRouter')
 
 const milkTestRouter = require("./routes/milkTestRoutes");
 const farmerDashboardRouter = require("./routes/FarmerDashboardRouter");
-const {
-    connectMQTT,
-    resumeActiveCollection
-} = require("./services/mqttxService");
-
-const {
-    initializeMilkTestService
-} = require("./services/milkTestService");
+const {connectMQTT, resumeActiveCollection} = require("./services/mqttxService");
+const { initializeMilkTestService} = require("./services/milkTestService");
 
 const app = Express();
 const port = process.env.PORT || 4023;
@@ -77,6 +72,7 @@ app.use("/farmer-dashboard", farmerDashboardRouter);
 app.use(reportRoutes);
 app.use(farmerRoutes);
 app.use(mqttRoutes);
+app.use(otp)
 
 // ============================================
 // START BACKEND
