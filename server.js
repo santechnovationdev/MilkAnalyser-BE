@@ -55,9 +55,17 @@ app.use(
         secret: process.env.SessionKey,
         resave: false,
         saveUninitialized: false,
-        store: store
-    })
-);
+        store: store,
+        cookie: {
+            secure: true,
+            httpOnly: true,
+            sameSite: 'none'
+        }
+    }))
+
+
+
+app.set('trust proxy', 1)
 
 // API routes
 app.use(SensorDataRouter);
