@@ -20,6 +20,7 @@ const milkTestRouter = require("./routes/milkTestRoutes");
 const farmerDashboardRouter = require("./routes/FarmerDashboardRouter");
 const {connectMQTT, resumeActiveCollection} = require("./services/mqttxService");
 const { initializeMilkTestService} = require("./services/milkTestService");
+const predictionPdfRoutes = require("./routes/predictionPdfRoutes");
 
 const app = Express();
 const port = process.env.PORT || 4023;
@@ -58,8 +59,6 @@ app.use(
         // }
     }))
 
-
-
 // app.set('trust proxy', 1)
 
 // API routes
@@ -73,7 +72,7 @@ app.use(reportRoutes);
 app.use(farmerRoutes);
 app.use(mqttRoutes);
 app.use(otp)
-
+app.use("/api/predictions", predictionPdfRoutes);
 // ============================================
 // START BACKEND
 // ============================================
