@@ -1336,11 +1336,165 @@ function handleDeviceStatus(data) {
 // RECEIVE SPECTRAL READINGS
 // ============================================
 
+// function handleSpectrum(data) {
+//     if (!activeSession) {
+//         console.warn(
+//             "Spectral data received without an active test.",
+//             {
+//                 topic: data?.topic,
+//                 farmerCustomId: data?.farmerCustomId,
+//                 spectralValuesLength: data?.spectralValues?.length
+//             }
+//         );
+//         return;
+//     }
+
+//     const session = activeSession;
+
+//     const farmerCustomId = String(
+//         data?.farmerCustomId || ""
+//     );
+
+//     if (
+//         farmerCustomId !==
+//         String(session.farmerCustomId)
+//     ) {
+//         console.warn(
+//             "Ignoring spectral data from an unexpected farmer topic."
+//         );
+//         return;
+//     }
+
+//     // Accept incoming readings only during collection.
+//     if (!["STARTING", "RUNNING"].includes(session.status)) {
+//         return;
+//     }
+
+//     const spectralValues = data?.spectralValues;
+
+//     if (
+//         !Array.isArray(spectralValues) ||
+//         spectralValues.length !== 18 ||
+//         spectralValues.some(value =>
+//             typeof value !== "number" ||
+//             !Number.isFinite(value)
+//         )
+//     ) {
+//         console.error(
+//             "Invalid spectral data received."
+//         );
+//         return;
+//     }
+
+//     queueReading(async () => {
+//         const currentSession =
+//             await MilkTestSession.findById(session._id);
+
+//         if (
+//             !currentSession ||
+//             !["STARTING", "RUNNING"].includes(
+//                 currentSession.status
+//             )
+//         ) {
+//             return;
+//         }
+
+//         // Do not save more than 10 readings in Mode 1.
+//         if (
+//             currentSession.mode === 1 &&
+//             currentSession.totalReadings >= ANALYSIS_MAX_READINGS
+//         ) {
+//             return;
+//         }
+
+//         const sequenceNumber =
+//             currentSession.totalReadings + 1;
+
+//         await MilkTestReading.create({
+//             testId: currentSession._id,
+//             farmerId: currentSession.farmerId,
+//             deviceId: currentSession.deviceId,
+//             sequenceNumber,
+//             spectralValues,
+//             measuredAt: new Date(),
+//             sourceTopic: data.topic || ""
+//         });
+
+//         const nextStatus =
+//             currentSession.status === "STARTING"
+//                 ? "RUNNING"
+//                 : currentSession.status;
+
+//         const updatedSession =
+//             await MilkTestSession.findByIdAndUpdate(
+//                 currentSession._id,
+//                 {
+//                     $set: {
+//                         status: nextStatus,
+//                         startedAt:
+//                             currentSession.startedAt || new Date()
+//                     },
+//                     $inc: {
+//                         totalReadings: 1
+//                     }
+//                 },
+//                 {
+//                     new: true
+//                 }
+//             );
+
+//         // Synchronize the in-memory session.
+//         if (
+//             activeSession &&
+//             String(activeSession._id) ===
+//             String(session._id)
+//         ) {
+//             activeSession.status = updatedSession.status;
+
+//             activeSession.totalReadings =
+//                 updatedSession.totalReadings;
+//         }
+
+//         console.log(
+//             `Milk reading saved: ${sequenceNumber}, Test: ${session._id}`
+//         );
+
+//         // ============================================
+//         // MODE 1 - AUTOMATIC STOP AFTER 10 READINGS
+//         // ============================================
+
+//         if (
+//             updatedSession.mode === 1 &&
+//             updatedSession.totalReadings >=
+//             ANALYSIS_MAX_READINGS &&
+//             autoStopScheduledFor !==
+//             String(updatedSession._id)
+//         ) {
+//             console.log(
+//                 "10 spectral readings collected. Scheduling automatic stop."
+//             );
+
+//             // Schedule outside readingQueue.
+//             // This prevents deadlock because stopTest()
+//             // waits for the readingQueue to finish.
+//             scheduleAutoStop(
+//                 updatedSession._id,
+//                 0
+//             );
+//         }
+
+//     }).catch(error => {
+//         console.error(
+//             "Failed to save milk spectral reading:",
+//             error
+//         );
+//     });
+// }
+
 function handleSpectrum(data) {
+    // Ignore farmer-specific spectrum messages when no real Milk Test
+    // session is active. Generic SensorData collection is handled separately.
     if (!activeSession) {
-        console.warn(
-            "Spectral data received without an active test."
-        );
         return;
     }
 
@@ -1350,6 +1504,7 @@ function handleSpectrum(data) {
         data?.farmerCustomId || ""
     );
 
+    // Verify that the incoming spectrum belongs to the active farmer.
     if (
         farmerCustomId !==
         String(session.farmerCustomId)
@@ -1367,6 +1522,7 @@ function handleSpectrum(data) {
 
     const spectralValues = data?.spectralValues;
 
+    // Validate exactly 18 finite numeric spectral values.
     if (
         !Array.isArray(spectralValues) ||
         spectralValues.length !== 18 ||
@@ -1381,6 +1537,7 @@ function handleSpectrum(data) {
         return;
     }
 
+    // Queue database writes to prevent sequence-number conflicts.
     queueReading(async () => {
         const currentSession =
             await MilkTestSession.findById(session._id);
@@ -1394,7 +1551,7 @@ function handleSpectrum(data) {
             return;
         }
 
-        // Do not save more than 10 readings in Mode 1.
+        // Do not save more than 10 readings in Mode 1 (Analysis).
         if (
             currentSession.mode === 1 &&
             currentSession.totalReadings >= ANALYSIS_MAX_READINGS
@@ -1405,6 +1562,7 @@ function handleSpectrum(data) {
         const sequenceNumber =
             currentSession.totalReadings + 1;
 
+        // Save the spectral reading.
         await MilkTestReading.create({
             testId: currentSession._id,
             farmerId: currentSession.farmerId,
@@ -1420,6 +1578,7 @@ function handleSpectrum(data) {
                 ? "RUNNING"
                 : currentSession.status;
 
+        // Update session status and reading count.
         const updatedSession =
             await MilkTestSession.findByIdAndUpdate(
                 currentSession._id,
