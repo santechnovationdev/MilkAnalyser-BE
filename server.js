@@ -71,7 +71,7 @@ app.use(reportRoutes);
 app.use(farmerRoutes);
 app.use(mqttRoutes);
 app.use(otp)
-
+app.use("/api/predictions", predictionPdfRoutes);
 // ============================================
 // START BACKEND
 // ============================================
