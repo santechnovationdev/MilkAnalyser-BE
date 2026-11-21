@@ -20,6 +20,7 @@ const milkTestRouter = require("./routes/milkTestRoutes");
 const farmerDashboardRouter = require("./routes/FarmerDashboardRouter");
 const { connectMQTT, resumeActiveCollection } = require("./services/mqttxService");
 const { initializeMilkTestService } = require("./services/milkTestService");
+const predictionPdfRoutes = require('./routes/predictionPdfRoutes')
 
 const app = Express();
 const port = process.env.PORT || 4023;
